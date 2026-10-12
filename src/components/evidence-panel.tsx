@@ -6,10 +6,10 @@ import type { CompanyWithIntel, EngineeringIntelligence, EvidenceSource } from "
 import { cn } from "@/lib/utils";
 
 const KIND: Record<EvidenceSource["kind"], { label: string; icon: typeof FileCode2; tone: string }> = {
-  file: { label: "Repo file", icon: FileCode2, tone: "text-emerald-700 dark:text-emerald-300" },
-  manifest: { label: "Dependency", icon: Package, tone: "text-emerald-700 dark:text-emerald-300" },
-  job: { label: "Job posting", icon: Briefcase, tone: "text-sky-700 dark:text-sky-300" },
-  mention: { label: "Mention only", icon: Tag, tone: "text-muted-foreground" },
+  file: { label: "In public code", icon: FileCode2, tone: "text-emerald-700 dark:text-emerald-300" },
+  manifest: { label: "In dependencies", icon: Package, tone: "text-emerald-700 dark:text-emerald-300" },
+  job: { label: "In job posts", icon: Briefcase, tone: "text-sky-700 dark:text-sky-300" },
+  mention: { label: "Mentioned only", icon: Tag, tone: "text-muted-foreground" },
 };
 
 /** Per-source status chips: which live sources contributed to this account's intelligence. */
@@ -54,9 +54,10 @@ export function EvidencePanel({ company, intel }: { company: CompanyWithIntel; i
   return (
     <div className="space-y-3 text-xs">
       <p className="text-muted-foreground">
-        Observed <span suppressHydrationWarning>{observed}</span> from live public sources. <b>Repo file</b> and{" "}
-        <b>Dependency</b> are confirmed in code; <b>Job posting</b> is confirmed hiring demand; <b>Mention only</b> is a weak
-        signal and never counted as confirmed.
+        Observed <span suppressHydrationWarning>{observed}</span> from live public sources. <b>In public code</b> /{" "}
+        <b>In dependencies</b> means a public repo references the tool; <b>In job posts</b> means they hire for it;{" "}
+        <b>Mentioned only</b> is a weak signal and never counted. Current production use is not verified — phrase
+        outreach as &ldquo;I noticed…&rdquo;, not as fact about their infrastructure.
       </p>
 
       <ul className="space-y-1.5">
@@ -67,8 +68,8 @@ export function EvidencePanel({ company, intel }: { company: CompanyWithIntel; i
           strength="Measured"
         />
         <SourceRow
-          claim={`Velocity: ${intel.velocity_score ?? "—"} · ${intel.commits_30d ?? 0} commits in 30 days`}
-          how="GitHub commits API on the busiest repos · push recency of the 30 latest repos"
+          claim={`Public velocity: ${intel.velocity_score ?? "—"} · ${intel.commits_30d ?? 0} commits in 30 days`}
+          how="GitHub commits API on the busiest public repos · push recency of the 30 latest (private repos not visible)"
           url={`https://github.com/${org}?tab=repositories`}
           strength="Measured"
         />
@@ -85,7 +86,7 @@ export function EvidencePanel({ company, intel }: { company: CompanyWithIntel; i
                   t.confirmed ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground",
                 )}
               >
-                {t.confirmed ? "Confirmed" : "Unconfirmed"} · {t.category}
+                {t.confirmed ? "Detected" : "Weak signal"} · {t.category}
               </span>
             </div>
             {t.sources?.length ? (

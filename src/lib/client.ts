@@ -39,6 +39,14 @@ export function toastApiError(err: unknown, context?: string) {
       toast.error("GitHub organization not found", { description: err.message });
       return;
     }
+    if (err.code === "RATE_LIMITED") {
+      toast.warning("Slow down a little", { description: err.message });
+      return;
+    }
+    if (err.code === "LIMIT_REACHED") {
+      toast.warning("Watchlist is full", { description: err.message });
+      return;
+    }
     if (err.code === "DUPLICATE") {
       toast.info("Already tracking", { description: err.message });
       return;

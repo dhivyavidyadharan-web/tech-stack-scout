@@ -337,7 +337,7 @@ export function Dashboard({ initialCompanies }: { initialCompanies: CompanyWithI
         icon: "velocity",
         label: "High velocity",
         value: loaded ? metrics.high : null,
-        sub: `${commits.toLocaleString()} commits in 30 days`,
+        sub: `${commits.toLocaleString()} public commits in 30 days`,
         bars: list.map((c) => ({ label: c.name, value: c.intelligence!.commits_30d ?? 0 })),
         gradient: "bg-gradient-to-br from-[oklch(0.66_0.12_165)] to-[oklch(0.46_0.1_170)]",
       },
@@ -482,7 +482,7 @@ export function Dashboard({ initialCompanies }: { initialCompanies: CompanyWithI
                 </div>
               )}
             </Panel>
-            <Panel id="leaderboard" className="scroll-mt-24 lg:col-span-3" title="Leaderboard" subtitle="Ranked by fit — click a row to open the account">
+            <Panel id="leaderboard" className="scroll-mt-24 lg:col-span-3" title="Leaderboard" subtitle="Ranked by fit hypothesis — click a row to open the account">
               {companies === null ? <Skeleton className="h-56 w-full rounded-xl" /> : <Leaderboard companies={companies} onJump={jumpTo} />}
             </Panel>
           </div>

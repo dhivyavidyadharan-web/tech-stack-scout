@@ -297,7 +297,7 @@ function IntelBody({
                 </TooltipTrigger>
                 <TooltipContent className="max-w-72">
                   <p className="font-medium">
-                    {t.category} · {t.confirmed ? "confirmed in repo files" : "mentioned only"}
+                    {t.category} · {t.confirmed ? "detected in public code or job posts" : "mentioned only (weak signal)"}
                   </p>
                   <ul className="mt-1 space-y-0.5 font-mono text-[11px] opacity-90">
                     {t.evidence.map((e) => (
@@ -353,6 +353,10 @@ function IntelBody({
         <AccordionItem value="fit">
           <AccordionTrigger className="px-1 text-sm">Why fit score {intel.fit_score}?</AccordionTrigger>
           <AccordionContent className="space-y-2 px-1">
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              A prioritisation hypothesis, not a conversion probability: it measures how much build, CI and review load the
+              public engineering signals suggest. Validate it against real outcomes as deals close.
+            </p>
             {intel.fit_reasons.map((r) => (
               <div key={r.label} className="space-y-1">
                 <div className="flex justify-between gap-2 text-xs">
@@ -628,7 +632,8 @@ function VelocityTag({ velocity, lastActivity }: { velocity: VelocityScore; last
   const s = VELOCITY_STYLE[velocity];
   const label = velocity === "Low" ? "Quiet" : "Active";
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium", s.bg, s.text)}>
+    <Tooltip>
+      <TooltipTrigger render={<span className={cn("inline-flex cursor-help items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium", s.bg, s.text)} />}>
       <span className="relative flex size-2">
         {velocity === "High" && <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-60", s.dot)} />}
         <span className={cn("relative inline-flex size-2 rounded-full", s.dot)} />
@@ -636,7 +641,12 @@ function VelocityTag({ velocity, lastActivity }: { velocity: VelocityScore; last
       <span suppressHydrationWarning>
         {velocity} velocity · {label}: pushed {shortAgo(lastActivity)}
       </span>
-    </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64">
+        Observed <b>public</b> GitHub activity: commits in the busiest public repos (30 days) and push recency of the 30
+        latest repos. Private repos aren&apos;t visible, so closed-source teams can look quieter than they are.
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -672,8 +682,9 @@ function FitBadge({ intel }: { intel: EngineeringIntelligence }) {
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-64">
-        Fit score: how strongly this org shows the pain a developer-productivity tool solves (velocity, CI complexity,
-        polyglot stack, monorepo, infra depth). Expand &ldquo;Why fit score&rdquo; for the breakdown.
+        Fit score is a <b>prioritisation hypothesis</b>: 8 transparent, weighted signals from public engineering data
+        (velocity, CI complexity, microservices, hiring, stack, monorepo, infra). It ranks where a developer-productivity
+        tool is most likely relevant. It is not a validated probability of purchase.
       </TooltipContent>
     </Tooltip>
   );

@@ -48,6 +48,8 @@ const narrativeSchema = z.object({
 const SYSTEM = `You are a senior solutions engineer helping an enterprise account executive prepare for outreach.
 You write precise, factual engineering briefs grounded ONLY in the data provided. Never invent repos, tools, metrics or customers.
 If a signal is marked "mentioned only", treat it as unconfirmed and hedge ("appears to", "references").
+Tools "detected in public code" prove a public repository references them, not that production runs on them — describe them as observed in their public repos (e.g. "your public repos use Terraform"), never as a fact about their production infrastructure.
+Activity numbers describe PUBLIC GitHub repositories only.
 Numbers, names and claims from headlines must be used exactly as written — never round, re-derive or reinterpret a figure (if a headline says "58% of traffic is bots", do not turn it into a claim about deployments). When unsure what a headline means, cite it by its subject rather than its numbers.
 No markdown, no bullet points, no emojis, no hype words like "revolutionize" or "game-changer".`;
 
@@ -67,7 +69,7 @@ function compactStats(stats: RawStats, velocity: VelocityScore) {
     infrastructure: stats.infra.map((t) => ({
       tool: t.name,
       category: t.category,
-      status: t.confirmed ? "confirmed in files" : "mentioned only",
+      status: t.confirmed ? "detected in public code or job posts" : "mentioned only",
       evidence: t.evidence.slice(0, 2),
     })),
     github_actions_workflow_files: stats.workflowFileCount,
@@ -350,7 +352,10 @@ export function fallbackNarrative(stats: RawStats, velocity: VelocityScore): AiN
   }.${archText}${hiringText}`;
 
   const detail = flagship ? `${flagship.name}` : `your ${langs[0]?.name ?? "core"} services`;
-  const now = hookAngles(stats).find((h) => ["news", "release", "new-repo"].includes(h.angle));
+  // Without Gemini there is no namesake check on headlines, so the template never builds on news:
+  // it falls back to verified GitHub releases, new repos, hiring and code facts.
+  const safeAngles = hookAngles(stats).filter((h) => h.angle !== "news");
+  const now = safeAngles.find((h) => ["release", "new-repo"].includes(h.angle));
   const whyItMatters: WhyItMatters[] = [
     { signal: `${stats.commits30d} commits in 30 days across the busiest repos`, relevance: "High change volume means CI queue time and review latency are paid many times a day." },
     ...(stats.workflowFileCount
@@ -364,7 +369,7 @@ export function fallbackNarrative(stats: RawStats, velocity: VelocityScore): AiN
     whyItMatters,
     overview: `${name} builds primarily in ${langText}${flagship ? `, led by ${flagship.name}` : ""}.${now ? ` ${now.fact}.` : ""}`.replace(/\.\./g, "."),
     summary: `${p1.replace(/\s+/g, " ").trim()}\n\n${p2.replace(/\s+/g, " ").trim()}`,
-    pitch: `${hookAngles(stats)[0]?.fact ?? `${stats.commits30d} commits landed across ${detail} this month`} caught my eye — curious how much of your engineers' week goes to waiting on builds and reviews?`,
+    pitch: `${safeAngles[0]?.fact ?? `${stats.commits30d} commits landed across ${detail} this month`} caught my eye — curious how much of your engineers' week goes to waiting on builds and reviews?`,
     variants: {
       technical: `With ${stats.workflowFileCount} CI workflows and ${langText} in play, how are you keeping build times flat as ${detail} grows?`,
       executive: `${name} is shipping at a ${velocity.toLowerCase()} pace across ${stats.activeRepos30d} active repos — teams at that scale usually lose hours per engineer each week to builds and reviews.`,

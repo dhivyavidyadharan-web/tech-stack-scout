@@ -3,6 +3,7 @@ import { apiError } from "@/lib/api";
 import { enrichCompany, recordRefreshError } from "@/lib/enrichment";
 import { env } from "@/lib/env";
 import { GitHubError } from "@/lib/github";
+import { pruneRateEvents } from "@/lib/guard";
 import { db } from "@/lib/supabase";
 import type { Company } from "@/lib/types";
 
@@ -62,6 +63,7 @@ export async function GET(request: Request) {
     durationMs: Date.now() - started,
     results,
   };
+  await pruneRateEvents().catch(() => {});
   console.log("[cron] refresh summary", JSON.stringify(summary));
   return NextResponse.json(summary);
 }

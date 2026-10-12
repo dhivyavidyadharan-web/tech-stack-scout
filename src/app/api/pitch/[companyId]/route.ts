@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, handleError } from "@/lib/api";
 import { regeneratePitch } from "@/lib/gemini";
+import { guard } from "@/lib/guard";
 import { db } from "@/lib/supabase";
 import type { EngineeringIntelligence, PitchTone, RawStats } from "@/lib/types";
 
@@ -18,6 +19,8 @@ const bodySchema = z.object({
  * from cached GitHub stats (Gemini Flash only; zero GitHub API calls).
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/pitch/[companyId]">) {
+  const blocked = await guard(request, "pitch");
+  if (blocked) return blocked;
   const { companyId } = await ctx.params;
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return apiError(400, { error: "tone must be technical | executive | casual", code: "VALIDATION" });

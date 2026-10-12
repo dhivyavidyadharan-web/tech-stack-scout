@@ -140,6 +140,23 @@ Errors always come back as `{ error, code, resetAt? }`. `code` is one of `GITHUB
 - **Freshness is visible.** A per-account source row (GitHub ✓ · Jobs · Blog ✓ · News 8 · HN 2 · Gemini) shows what the last refresh actually used. The status strip shows the next scheduled weekly refresh, and the "Live · synced Xs ago" badge shows the last client sync.
 - **Server-rendered.** The first HTML response already contains every account, summary, opener and evidence item, so the product is complete even before JavaScript runs.
 
+## Security & abuse protection
+
+The dashboard is intentionally open, with no login, so reviewers can use every feature. The write and enrich API is still protected:
+
+- **Same-site check:** `POST`/`DELETE` requests from another website's origin are rejected with `403`, so other pages can't drive the API from a visitor's browser.
+- **Rate limits** per IP and globally (10-minute windows), stored in Supabase so they hold across serverless instances: add 6/40 · delete 10/40 · enrich 40/120 · pitch 20/80. Over the limit you get `429 RATE_LIMITED` and a toast.
+- **Watchlist cap** of 30 accounts (`LIMIT_REACHED`).
+- **Secrets stay server-side:** the service-role key, GitHub token and Gemini key never reach the browser, and RLS denies the public anon key. The cron route needs `CRON_SECRET`.
+- **Optional login:** set `DASHBOARD_PASSWORD` to put the whole app behind Basic Auth.
+
+## Honest labelling (what the numbers do and don't mean)
+
+- **Fit score is a prioritisation hypothesis**, not a probability of purchase. It's built from 8 transparent, weighted public engineering signals, and each card shows the breakdown. It should be validated against real deal outcomes.
+- **Velocity is observed *public* GitHub activity.** Private repositories aren't visible, so closed-source teams can look quieter than they are.
+- **"Detected in public code" ≠ "runs in production".** Evidence labels say exactly what was observed (in public code, in dependencies, in job posts, mentioned only), and Gemini is told to phrase infrastructure as "seen in your public repos".
+- **The template fallback never uses news.** Without Gemini's company-relevance check, the opener is built only from verified GitHub releases, repos, hiring and code facts. Template output is badged "Template summary".
+
 ## Data sources: what we use and why
 
 Tech Stack Scout automates the three research tasks an AE currently does by hand.

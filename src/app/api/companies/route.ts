@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, handleError, loadWatchlist } from "@/lib/api";
 import { enrichCompany, recordRefreshError } from "@/lib/enrichment";
 import { GitHubError, resolveOwner } from "@/lib/github";
+import { guard, MAX_WATCHLIST } from "@/lib/guard";
 import { db } from "@/lib/supabase";
 import type { Company } from "@/lib/types";
 
@@ -19,7 +20,7 @@ export async function GET() {
 }
 
 const createSchema = z.object({
-  github_org: z.string().trim().min(1, "GitHub organization is required").max(100),
+  github_org: z.string({ error: "GitHub organization is required" }).trim().min(1, "GitHub organization is required").max(100),
   name: z.string().trim().max(120).optional(),
   domain: z.string().trim().max(253).optional(),
 });
@@ -39,6 +40,8 @@ function hostnameOf(url: string | null | undefined): string | null {
  * and the error is returned as a warning so the UI can offer a retry.
  */
 export async function POST(request: Request) {
+  const blocked = await guard(request, "add");
+  if (blocked) return blocked;
   const parsed = createSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) {
     return apiError(400, { error: parsed.error.issues[0]?.message ?? "Invalid input", code: "VALIDATION" });
@@ -48,6 +51,11 @@ export async function POST(request: Request) {
     const owner = await resolveOwner(parsed.data.github_org);
     const handle = owner.login.toLowerCase();
     const supabase = db();
+
+    const { count: total } = await supabase.from("companies").select("id", { head: true, count: "exact" });
+    if ((total ?? 0) >= MAX_WATCHLIST) {
+      return apiError(400, { error: `The watchlist is capped at ${MAX_WATCHLIST} accounts — remove one first.`, code: "LIMIT_REACHED" });
+    }
 
     const { data: existing } = await supabase.from("companies").select("id,name").eq("github_org", handle).maybeSingle();
     if (existing) {

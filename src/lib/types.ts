@@ -229,6 +229,9 @@ export interface ApiError {
     | "DUPLICATE"
     | "NOT_FOUND"
     | "UNAUTHORIZED"
+    | "FORBIDDEN"
+    | "RATE_LIMITED"
+    | "LIMIT_REACHED"
     | "INTERNAL";
   resetAt?: string;
 }

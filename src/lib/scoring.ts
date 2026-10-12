@@ -45,7 +45,7 @@ export function fitScore(stats: RawStats): { score: number; reasons: FitReason[]
     },
     { label: `Polyglot stack: ${significantLangs} languages above 5% of code`, points: clamp((significantLangs - 1) * 4, 10), max: 10 },
     { label: hasMonorepo ? "Monorepo tooling detected (builds get slow at scale)" : "No monorepo tooling detected", points: hasMonorepo ? 10 : 0, max: 10 },
-    { label: `Infra depth: ${infraDepth} confirmed container/cloud/IaC tools`, points: clamp(infraDepth * 2.5, 10), max: 10 },
+    { label: `Infra depth: ${infraDepth} container/cloud/IaC tools detected in public code`, points: clamp(infraDepth * 2.5, 10), max: 10 },
   ];
 
   return { score: reasons.reduce((s, r) => s + r.points, 0), reasons };
