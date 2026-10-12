@@ -17,6 +17,10 @@ export const env = {
   /** Optional: without it, summaries fall back to a deterministic template. */
   geminiApiKey: () => process.env.GEMINI_API_KEY || null,
   geminiModel: () => process.env.GEMINI_MODEL || "gemini-flash-latest",
+  /** Optional: custom gateway/proxy base URL (e.g. an institution-provided endpoint). */
+  geminiBaseUrl: () => process.env.GEMINI_BASE_URL || null,
+  /** Optional: "true" routes calls to Vertex AI (express-mode API key) instead of the Gemini Developer API. */
+  geminiUseVertex: () => process.env.GEMINI_USE_VERTEX === "true",
   /** Optional: without it, GitHub allows only 60 requests/hour. */
   githubToken: () => process.env.GITHUB_TOKEN || null,
   cronSecret: () => process.env.CRON_SECRET || null,

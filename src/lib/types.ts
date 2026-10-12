@@ -21,8 +21,10 @@ export interface LanguageShare {
 export interface InfraTool {
   name: string;
   category: InfraCategory;
-  /** Human-readable proof, e.g. "supabase/cli: Dockerfile" */
+  /** Human-readable proof, e.g. "cli: Dockerfile" */
   evidence: string[];
+  /** true = found in real files/manifests; false = only mentioned in names/topics. */
+  confirmed: boolean;
 }
 
 export interface FitReason {
@@ -43,7 +45,33 @@ export interface TopRepo {
   description: string | null;
 }
 
-/** Aggregate GitHub facts — the only input the LLM sees. */
+export type MicroservicesVerdict = "Likely" | "Possible" | "Unlikely";
+
+export interface Architecture {
+  microservices: MicroservicesVerdict;
+  /** Human-readable proof, e.g. "supabase: 9 Dockerfiles across separate services" */
+  signals: string[];
+}
+
+export interface HiringSignals {
+  provider: "greenhouse" | "lever" | "ashby";
+  boardUrl: string;
+  totalRoles: number;
+  engineeringRoles: number;
+  sampleTitles: string[];
+  /** Tools/languages mentioned across engineering job descriptions, by number of postings. */
+  tools: { name: string; count: number }[];
+  /** Postings that mention microservices / distributed systems. */
+  microservicesMentions: number;
+}
+
+export interface BlogPost {
+  title: string;
+  url: string;
+  published: string | null;
+}
+
+/** Aggregate public facts (GitHub + jobs + blog) — the only input the LLM sees. */
 export interface RawStats {
   org: string;
   orgName: string | null;
@@ -62,6 +90,9 @@ export interface RawStats {
   infra: InfraTool[];
   topRepos: TopRepo[];
   topics: string[];
+  architecture: Architecture;
+  hiring: HiringSignals | null;
+  blogPosts: BlogPost[];
 }
 
 export interface Company {
@@ -70,6 +101,10 @@ export interface Company {
   domain: string | null;
   github_org: string;
   created_at: string;
+  /** Optional override / cached discovery, e.g. "greenhouse:vercel" or "none". */
+  jobs_board: string | null;
+  /** Optional override / cached discovery: RSS/Atom URL or "none". */
+  blog_feed_url: string | null;
 }
 
 export interface EngineeringIntelligence {
@@ -92,6 +127,9 @@ export interface EngineeringIntelligence {
   raw_stats: RawStats | Record<string, never>;
   ai_model: string | null;
   refresh_error: string | null;
+  hiring_signals: HiringSignals | null;
+  architecture: Architecture | Record<string, never>;
+  blog_posts: BlogPost[];
 }
 
 export interface Snapshot {
@@ -102,6 +140,7 @@ export interface Snapshot {
   fit_score: number | null;
   commits_30d: number | null;
   active_repo_count: number | null;
+  open_eng_roles: number | null;
   dominant_languages: LanguageShare[];
   cloud_infra_tools: InfraTool[];
 }
