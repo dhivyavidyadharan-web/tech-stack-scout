@@ -100,7 +100,7 @@ export function buildBrief(c: CompanyWithIntel): string {
     `ACCOUNT BRIEF: ${c.name}${c.domain ? ` (${c.domain})` : ""}`,
     `GitHub: https://github.com/${c.github_org}`,
     ...(i.overview ? [``, i.overview, ``] : []),
-    `Fit score: ${i.fit_score ?? "n/a"}/100 · Velocity: ${i.velocity_score ?? "n/a"} · ${i.active_repo_count} active repos · ${i.commits_30d ?? 0} commits (30d)`,
+    `Engineering complexity: ${i.fit_score ?? "n/a"}/100 · Velocity: ${i.velocity_score ?? "n/a"} · ${i.active_repo_count} active repos · ${i.commits_30d ?? 0} commits (30d)`,
     `Languages: ${langs}`,
     `Infrastructure: ${infra}`,
     `Microservices: ${"microservices" in i.architecture ? i.architecture.microservices : "n/a"}`,

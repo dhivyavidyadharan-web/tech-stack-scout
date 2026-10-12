@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./supabase";
 import { collectOrgStats } from "./github";
 import { withHiringEvidence, withJobEvidence } from "./infra-detection";
+import { deriveBuyingSignals } from "./buying-signals";
 import { fetchBlogPosts, fetchHiringSignals, fetchNews } from "./signals";
 import { filterRelevantNews, generateNarrative } from "./gemini";
 import { fitScore, velocityFrom } from "./scoring";
@@ -28,6 +29,8 @@ export async function enrichCompany(company: Company): Promise<EngineeringIntell
     stats.infra = withJobEvidence(stats.infra, jobs.hiring.tools, jobs.hiring.provider, jobs.hiring.boardUrl);
     stats.architecture = withHiringEvidence(stats.architecture, jobs.hiring.microservicesMentions, jobs.hiring.engineeringRoles);
   }
+
+  stats.buyingSignals = deriveBuyingSignals(stats);
 
   const velocity = velocityFrom(stats);
   const fit = fitScore(stats);
@@ -58,6 +61,8 @@ export async function enrichCompany(company: Company): Promise<EngineeringIntell
     blog_posts: stats.blogPosts,
     overview: narrative.overview,
     why_it_matters: narrative.whyItMatters,
+    buying_signals: stats.buyingSignals,
+    unknowns: narrative.unknowns,
     news: stats.news,
     building: stats.building,
   };

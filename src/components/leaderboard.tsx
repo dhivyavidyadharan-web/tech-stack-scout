@@ -21,7 +21,7 @@ export function Leaderboard({ companies, onJump }: { companies: CompanyWithIntel
 
   return (
     <div className="-mx-1 overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
+      <table className="w-full min-w-[720px] text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
             <th className="px-3 py-2 font-semibold">#</th>
@@ -29,7 +29,8 @@ export function Leaderboard({ companies, onJump }: { companies: CompanyWithIntel
             <th className="px-3 py-2 font-semibold">Stack</th>
             <th className="px-3 py-2 font-semibold">Velocity</th>
             <th className="px-3 py-2 font-semibold">Eng. hiring</th>
-            <th className="px-3 py-2 font-semibold">Fit</th>
+            <th className="px-3 py-2 font-semibold" title="Evidence of developer-productivity need (see each account)">Buying signals</th>
+            <th className="px-3 py-2 font-semibold">Complexity</th>
           </tr>
         </thead>
         <tbody>
@@ -83,6 +84,13 @@ export function Leaderboard({ companies, onJump }: { companies: CompanyWithIntel
                 </td>
                 <td className="px-3 py-2.5 text-xs tabular-nums">
                   {intel.hiring_signals ? `${intel.hiring_signals.engineeringRoles} roles` : <span className="text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2.5 text-xs tabular-nums">
+                  {intel.buying_signals?.length ? (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">{intel.buying_signals.length}</span>
+                  ) : (
+                    <span className="text-muted-foreground">none</span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2">

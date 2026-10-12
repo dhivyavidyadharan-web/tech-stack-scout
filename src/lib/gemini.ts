@@ -14,6 +14,8 @@ export interface AiNarrative {
   overview: string;
   /** Observed signal → why it matters for the seller's product. */
   whyItMatters: WhyItMatters[];
+  /** What public data cannot show. */
+  unknowns: string[];
   summary: string; // exactly two paragraphs separated by "\n\n"
   pitch: string;
   variants: PitchVariants;
@@ -43,6 +45,9 @@ const narrativeSchema = z.object({
     .array(z.object({ signal: z.string().min(5).max(220), relevance: z.string().min(5).max(260) }))
     .min(1)
     .max(3),
+  unknowns: z.array(z.string().min(5).max(200)).min(1).max(3),
+  hook_type: z.enum(["buying-signal", "context"]),
+  hook_evidence: z.string().min(5).max(320),
 });
 
 const SYSTEM = `You are a senior solutions engineer helping an enterprise account executive prepare for outreach.
@@ -99,52 +104,47 @@ function compactStats(stats: RawStats, velocity: VelocityScore) {
 }
 
 export interface HookAngle {
-  angle: "news" | "release" | "new-repo" | "hiring" | "blog" | "architecture" | "flagship-repo" | "language-mix" | "monorepo" | "infrastructure" | "delivery-pace";
+  /** buying-signal = suggests dev-productivity need; context = interesting, proves no need. */
+  type: "buying-signal" | "context";
+  angle: string;
   fact: string;
 }
 
 /**
- * Ranked, company-specific hook candidates — most distinctive first.
- * Generic signals every org has (CI workflow counts, commit totals) go last,
- * so openers don't all read "With N GitHub Actions workflows…".
+ * Ranked hook candidates. Buying signals (evidence of developer-productivity need)
+ * come first; context signals (news, funding, launches, repos) follow and may only
+ * support curiosity-led openers — never an asserted pain.
  */
 export function hookAngles(stats: RawStats): HookAngle[] {
-  const out: HookAngle[] = [];
-  // What they're building *right now* beats everything else.
+  const out: HookAngle[] = stats.buyingSignals.map((b) => ({ type: "buying-signal", angle: b.kind, fact: b.fact }));
+  const ctx = (angle: string, fact: string) => out.push({ type: "context", angle, fact });
+
   const headline = stats.news.find((n) => n.kind === "news");
-  if (headline) out.push({ angle: "news", fact: `In the news: "${headline.title}" (${headline.source}${headline.published ? `, ${headline.published.slice(0, 10)}` : ""})` });
+  if (headline) ctx("news", `In the news: "${headline.title}" (${headline.source}${headline.published ? `, ${headline.published.slice(0, 10)}` : ""})`);
   const hn = stats.news.find((n) => n.kind === "hn" && (n.points ?? 0) >= 50);
-  if (hn) out.push({ angle: "news", fact: `Trending on Hacker News: "${hn.title}" (${hn.points} points)` });
+  if (hn) ctx("news", `Trending on Hacker News: "${hn.title}" (${hn.points} points)`);
   const release = stats.building.releases[0];
-  if (release) out.push({ angle: "release", fact: `Just shipped ${release.repo} ${release.tag}${release.name !== release.tag ? ` ("${release.name}")` : ""} on ${release.published.slice(0, 10)}` });
+  if (release) ctx("release", `Just shipped ${release.repo} ${release.tag}${release.name !== release.tag ? ` ("${release.name}")` : ""} on ${release.published.slice(0, 10)}`);
   const fresh = stats.building.newRepos[0];
-  if (fresh) out.push({ angle: "new-repo", fact: `New repo ${fresh.name} created ${fresh.created.slice(0, 10)}${fresh.description ? `: ${fresh.description}` : ""}` });
+  if (fresh) ctx("new-repo", `New repo ${fresh.name} created ${fresh.created.slice(0, 10)}${fresh.description ? `: ${fresh.description}` : ""}`);
   const h = stats.hiring;
   if (h && h.engineeringRoles > 0) {
-    const title = h.sampleTitles.find((t) => !/^(senior |staff |principal )?software engineer$/i.test(t)) ?? h.sampleTitles[0];
     const tools = h.tools.slice(0, 3).map((t) => `${t.name} (${t.count} postings)`).join(", ");
-    out.push({ angle: "hiring", fact: `Hiring ${h.engineeringRoles} engineers${title ? `, including a "${title}"` : ""}${tools ? `; job descriptions cite ${tools}` : ""}` });
+    ctx("hiring", `Hiring ${h.engineeringRoles} engineers${tools ? `; job descriptions cite ${tools}` : ""}`);
   }
   const recent = stats.blogPosts.find((p) => !p.published || Date.now() - new Date(p.published).getTime() < 75 * 86_400_000);
-  if (recent) out.push({ angle: "blog", fact: `Recently published "${recent.title}"${recent.published ? ` (${recent.published.slice(0, 10)})` : ""}` });
-  if (stats.architecture.microservices !== "Unlikely" && stats.architecture.signals[0]) {
-    out.push({ angle: "architecture", fact: `Microservices ${stats.architecture.microservices.toLowerCase()}: ${stats.architecture.signals.slice(0, 2).join("; ")}` });
-  }
+  if (recent) ctx("blog", `Recently published "${recent.title}"${recent.published ? ` (${recent.published.slice(0, 10)})` : ""}`);
   const flagship = stats.topRepos[0];
-  if (flagship) {
-    out.push({ angle: "flagship-repo", fact: `Flagship repo ${flagship.name} (${flagship.stars.toLocaleString()} stars, ${flagship.language ?? "mixed"}): ${flagship.description ?? "no description"}` });
-  }
+  if (flagship) ctx("flagship-repo", `Flagship repo ${flagship.name} (${flagship.stars.toLocaleString()} stars, ${flagship.language ?? "mixed"}): ${flagship.description ?? "no description"}`);
   const [top, second] = stats.languages;
-  if (top && second && second.percentage >= 8) {
-    out.push({ angle: "language-mix", fact: `Splits code between ${top.name} (${top.percentage}%) and ${second.name} (${second.percentage}%)` });
-  }
-  const mono = stats.infra.filter((t) => t.category === "Monorepo" && t.confirmed).map((t) => t.name);
-  if (mono.length) out.push({ angle: "monorepo", fact: `Runs monorepo tooling: ${mono.join(", ")}` });
-  const infra = stats.infra.filter((t) => t.confirmed && ["Orchestration", "IaC", "Cloud"].includes(t.category)).map((t) => t.name);
-  if (infra.length) out.push({ angle: "infrastructure", fact: `Confirmed infrastructure: ${infra.slice(0, 4).join(", ")}` });
-  out.push({ angle: "delivery-pace", fact: `${stats.commits30d} commits in 30 days across busiest repos; ${stats.workflowFileCount} CI workflow files` });
+  if (top && second && second.percentage >= 8) ctx("language-mix", `Splits public code between ${top.name} (${top.percentage}%) and ${second.name} (${second.percentage}%)`);
   return out;
 }
+
+const angleList = (stats: RawStats) =>
+  hookAngles(stats)
+    .map((h, i) => `${i + 1}. [${h.type} · ${h.angle}] ${h.fact}`)
+    .join("\n") || "(no candidate angles — public data is sparse)";
 
 function buildPrompt(stats: RawStats, velocity: VelocityScore): string {
   return `Seller's product: ${env.sellerProduct()}.
@@ -152,19 +152,25 @@ function buildPrompt(stats: RawStats, velocity: VelocityScore): string {
 Public engineering intelligence (JSON):
 ${JSON.stringify(compactStats(stats, velocity), null, 2)}
 
-Candidate hook angles for this company, most distinctive first:
-${hookAngles(stats).map((h, i) => `${i + 1}. [${h.angle}] ${h.fact}`).join("\n")}
+Candidate hook angles (buying signals first, then context):
+${angleList(stats)}
 
 Write:
 0. overview: 1–2 sentences (max 45 words) an AE can skim in five seconds — what they build, their dominant stack, and the single most relevant thing they are doing right now.
 1. paragraph_1 (3–4 sentences): the engineering environment — dominant languages with their shares, flagship repos, architecture (microservices or not, with the evidence) and what the codebase suggests they build.
-2. paragraph_2 (3–4 sentences): delivery & infrastructure — CI/CD, containers/cloud/IaC, monorepo tooling, build velocity, plus what their hiring, recent releases, news and blog posts reveal about where engineering is investing right now — and the most likely developer-productivity friction this creates.
-3. outreach_pitch: ONE sentence (max 30 words) cold-email opener built on the most distinctive candidate angle (prefer the top of the list). It must sound like it could only have been written to THIS company — name the specific role, post, repo or architecture detail. Connect it naturally to the seller's product.
-4. pitch_technical, pitch_executive, pitch_casual: one sentence each for a staff engineer, a VP of Engineering, and a friendly peer. Each must use a DIFFERENT angle from the list than outreach_pitch and from each other.
-5. hook_angle: the bracketed angle name outreach_pitch is built on (e.g. "hiring").
-6. why_it_matters: 2–3 items. Each "signal" is ONE concrete observed fact from the data (cite the number, repo, tool, role or headline); each "relevance" is ONE sentence on why that fact makes the seller's product relevant (the specific friction it creates — build time, CI queues, review load, onboarding, context-switching). No generic claims; if the data doesn't support a link, leave that item out.
+2. paragraph_2 (3–4 sentences): delivery & infrastructure — CI/CD, containers/cloud/IaC, monorepo tooling, build velocity, plus what their hiring, recent releases, news and blog posts reveal about where engineering is investing right now — and, ONLY where a buying signal supports it, which developer-productivity friction may be present (phrased as a hypothesis, not a fact).
+3. outreach_pitch: ONE sentence (max 30 words) built on the TOP candidate angle (candidates are ordered most specific first; a raw CI-workflow count is the weakest signal — use it only when nothing more specific exists).
+   - [buying-signal]: you may connect it to a developer-productivity friction, but only as a question or hypothesis that cites the signal ("curious whether…", "wondering how…"). Never assert they have the problem.
+   - [context]: acknowledge the event specifically and ask an open, curiosity-led question about their engineering priorities. Do NOT claim or imply that funding, an acquisition, a launch, executive commentary or traffic numbers cause CI, build or review pain.
+   It must sound written only for THIS company. Do not mention the product name.
+4. pitch_technical, pitch_executive, pitch_casual: one sentence each (staff engineer, VP of Engineering, friendly peer), each on a DIFFERENT angle, following the same buying-signal/context rules.
+5. hook_angle: the angle name outreach_pitch is built on (e.g. "hiring").
+6. why_it_matters: 1–3 items, preferring buying signals. "signal" = ONE observed fact copied from the data (number, repo, tool, role or headline). "relevance" = ONE sentence on why that fact MAY make the seller's product relevant, phrased as a hypothesis ("may", "could", "often"), never as certainty. Leave items out rather than stretch.
+7. unknowns: 1–3 short items naming what public data cannot show that would confirm or refute the hypothesis (e.g. "Actual CI wait times are not public").
+8. hook_type: "buying-signal" or "context" — the type of the angle outreach_pitch uses.
+9. hook_evidence: the fact (copied from the candidate list) that outreach_pitch is built on.
 
-Rules for every pitch: do not open with a count of CI/GitHub Actions workflows or commits (the "delivery-pace" angle is a last resort); do not mention the product name; do not start with "I", "With", "Managing", "Following", "Scaling" or "Saw"; vary sentence structure; no generic phrases like "as your team scales".`;
+Rules for every pitch: never invent a pain the evidence doesn't show; do not open with a bare count of CI workflows or commits; do not mention the product name; do not start with "I", "With", "Managing", "Following", "Scaling", "Saw", "Given", "Because" or "Are"; vary sentence structure; no generic phrases like "as your team scales".`;
 }
 
 const responseSchema = {
@@ -178,6 +184,9 @@ const responseSchema = {
     pitch_casual: { type: Type.STRING },
     hook_angle: { type: Type.STRING },
     overview: { type: Type.STRING },
+    unknowns: { type: Type.ARRAY, items: { type: Type.STRING } },
+    hook_type: { type: Type.STRING, enum: ["buying-signal", "context"] },
+    hook_evidence: { type: Type.STRING },
     why_it_matters: {
       type: Type.ARRAY,
       items: {
@@ -187,8 +196,11 @@ const responseSchema = {
       },
     },
   },
-  required: ["overview", "why_it_matters", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
-  propertyOrdering: ["overview", "why_it_matters", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
+  required: ["overview", "why_it_matters", "unknowns", "hook_type", "hook_evidence", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
+  propertyOrdering: [
+    "overview", "why_it_matters", "unknowns", "paragraph_1", "paragraph_2",
+    "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle", "hook_type", "hook_evidence",
+  ],
 };
 
 const oneParagraph = (s: string) => s.replace(/\s*\n+\s*/g, " ").replace(/\*\*/g, "").trim();
@@ -219,6 +231,7 @@ export async function generateNarrative(stats: RawStats, velocity: VelocityScore
       return {
         overview: oneParagraph(parsed.overview),
         whyItMatters: parsed.why_it_matters.map((w) => ({ signal: oneParagraph(w.signal), relevance: oneParagraph(w.relevance) })),
+        unknowns: parsed.unknowns.map(oneParagraph),
         // Enforce the "exactly two paragraphs" contract regardless of model formatting.
         summary: `${oneParagraph(parsed.paragraph_1)}\n\n${oneParagraph(parsed.paragraph_2)}`,
         pitch: oneParagraph(parsed.outreach_pitch),
@@ -226,7 +239,9 @@ export async function generateNarrative(stats: RawStats, velocity: VelocityScore
           technical: oneParagraph(parsed.pitch_technical),
           executive: oneParagraph(parsed.pitch_executive),
           casual: oneParagraph(parsed.pitch_casual),
-          angle: parsed.hook_angle?.replace(/[[\]]/g, "").trim() || undefined,
+          angle: parsed.hook_angle?.replace(/[[\]]/g, "").replace(/^(buying-signal|context)\s*·\s*/, "").trim() || undefined,
+          hookType: parsed.hook_type,
+          hookEvidence: oneParagraph(parsed.hook_evidence),
         },
         model,
       };
@@ -298,12 +313,13 @@ export async function regeneratePitch(
 GitHub intelligence (JSON):
 ${JSON.stringify(compactStats(stats, velocity))}
 
-Candidate hook angles, most distinctive first:
-${hookAngles(stats).map((h, i) => `${i + 1}. [${h.angle}] ${h.fact}`).join("\n")}
+Candidate hook angles (buying signals first, then context):
+${angleList(stats)}
 
 Write ONE fresh cold-email opening sentence (max 30 words) for ${TONE_GUIDE[tone]}.
 Build it on a candidate angle NOT used by the previous versions below, naming the specific detail.
-Do not open with CI workflow or commit counts. Do not mention the product name. Do not start with "I", "With", "Managing", "Following", "Scaling" or "Saw".
+A [buying-signal] may raise a developer-productivity friction only as a question; a [context] angle must stay curiosity-led and must not imply any pain.
+Do not open with CI workflow or commit counts. Do not mention the product name. Do not start with "I", "With", "Managing", "Following", "Scaling", "Saw", "Given", "Because" or "Are".
 Previous versions to avoid:
 ${avoid.map((a) => `- ${a}`).join("\n") || "- (none)"}`,
     config: {
@@ -354,26 +370,42 @@ export function fallbackNarrative(stats: RawStats, velocity: VelocityScore): AiN
   const detail = flagship ? `${flagship.name}` : `your ${langs[0]?.name ?? "core"} services`;
   // Without Gemini there is no namesake check on headlines, so the template never builds on news:
   // it falls back to verified GitHub releases, new repos, hiring and code facts.
-  const safeAngles = hookAngles(stats).filter((h) => h.angle !== "news");
+  // Headline-derived signals are skipped (they could be namesakes); company-blog and HN items are domain-scoped.
+  const safeAngles = hookAngles(stats).filter(
+    (h) => h.angle !== "news" && !(h.angle === "content" && !/^(Blog|Hacker News):/.test(h.fact)),
+  );
+  const lead = safeAngles[0];
   const now = safeAngles.find((h) => ["release", "new-repo"].includes(h.angle));
   const whyItMatters: WhyItMatters[] = [
-    { signal: `${stats.commits30d} commits in 30 days across the busiest repos`, relevance: "High change volume means CI queue time and review latency are paid many times a day." },
+    { signal: `${stats.commits30d} commits in 30 days across the busiest repos`, relevance: "High change volume may mean CI queue time and review latency are paid many times a day." },
     ...(stats.workflowFileCount
-      ? [{ signal: `${stats.workflowFileCount} CI workflow files in the top repos`, relevance: "Complex pipelines are where faster, cached builds save the most engineering hours." }]
+      ? [{ signal: `${stats.workflowFileCount} CI workflow files in the top repos`, relevance: "Complex pipelines are often where faster, cached builds save the most engineering hours." }]
       : []),
     ...(stats.architecture.microservices === "Likely"
-      ? [{ signal: stats.architecture.signals[0], relevance: "Many independently built services multiply build, test and review overhead." }]
+      ? [{ signal: stats.architecture.signals[0], relevance: "Many independently built services can multiply build, test and review overhead." }]
       : []),
   ].slice(0, 3);
   return {
     whyItMatters,
+    unknowns: [
+      "Actual CI wait times and build durations are not public",
+      "Private repositories and internal tooling are not visible",
+    ],
     overview: `${name} builds primarily in ${langText}${flagship ? `, led by ${flagship.name}` : ""}.${now ? ` ${now.fact}.` : ""}`.replace(/\.\./g, "."),
     summary: `${p1.replace(/\s+/g, " ").trim()}\n\n${p2.replace(/\s+/g, " ").trim()}`,
-    pitch: `${safeAngles[0]?.fact ?? `${stats.commits30d} commits landed across ${detail} this month`} caught my eye — curious how much of your engineers' week goes to waiting on builds and reviews?`,
+    // Buying signal → pain only as a question; context → curiosity, no pain asserted.
+    pitch: lead
+      ? lead.type === "buying-signal"
+        ? `${lead.fact} caught my eye — curious whether build and review time is something your team is actively working on?`
+        : `${lead.fact} caught my eye — what's top of mind for your engineering team this quarter?`
+      : `Been reading through ${detail} — what's top of mind for your engineering team this quarter?`,
     variants: {
       technical: `With ${stats.workflowFileCount} CI workflows and ${langText} in play, how are you keeping build times flat as ${detail} grows?`,
-      executive: `${name} is shipping at a ${velocity.toLowerCase()} pace across ${stats.activeRepos30d} active repos — teams at that scale usually lose hours per engineer each week to builds and reviews.`,
+      executive: `${name} shows ${stats.activeRepos30d} active public repos this month — curious how you think about developer time spent on builds and reviews at that pace?`,
       casual: `Been poking around ${detail} — nice work. Out of curiosity, what's the slowest part of your dev loop right now?`,
+      angle: lead?.angle,
+      hookType: lead?.type ?? "context",
+      hookEvidence: lead?.fact,
     },
     model: "heuristic-fallback",
   };

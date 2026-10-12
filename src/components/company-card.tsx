@@ -11,6 +11,7 @@ import {
   ClipboardCopy,
   ChevronRight,
   Lightbulb,
+  Target,
   Copy,
   ExternalLink,
   GitCommitHorizontal,
@@ -313,20 +314,61 @@ function IntelBody({
 
       <HiringSection hiring={intel.hiring_signals} />
 
+      <section className="space-y-2">
+        <SectionLabel>Buying signals ({intel.buying_signals?.length ?? 0})</SectionLabel>
+        {intel.buying_signals?.length ? (
+          <ul className="space-y-1">
+            {intel.buying_signals.map((b) => (
+              <li key={b.fact} className="flex items-start gap-1.5 text-xs">
+                <Target className="mt-0.5 size-3 shrink-0 text-primary" aria-hidden />
+                {b.url ? (
+                  <a href={b.url} target="_blank" rel="noreferrer" className="leading-snug hover:underline">
+                    {b.fact}
+                  </a>
+                ) : (
+                  <span className="leading-snug">{b.fact}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No direct evidence of developer-productivity need in public data — treat this as a curiosity-led first
+            conversation, not a pain-led pitch.
+          </p>
+        )}
+      </section>
+
       {intel.why_it_matters?.length > 0 && (
         <section className="space-y-2">
-          <SectionLabel>Why it matters for your product</SectionLabel>
+          <SectionLabel>Why it may matter for your product</SectionLabel>
           <ul className="space-y-2">
             {intel.why_it_matters.map((w) => (
               <li key={w.signal} className="flex gap-2 rounded-lg bg-secondary/60 p-2.5 text-xs">
                 <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-emerald-brand" aria-hidden />
-                <div>
-                  <p className="font-semibold leading-snug">{w.signal}</p>
-                  <p className="mt-0.5 leading-snug text-muted-foreground">{w.relevance}</p>
+                <div className="space-y-1">
+                  <p className="leading-snug">
+                    <ConfidenceTag kind="observed" /> <span className="font-semibold">{w.signal}</span>
+                  </p>
+                  <p className="leading-snug text-muted-foreground">
+                    <ConfidenceTag kind="hypothesis" /> {w.relevance}
+                  </p>
                 </div>
               </li>
             ))}
           </ul>
+          {intel.unknowns?.length > 0 && (
+            <div className="rounded-lg border border-dashed p-2.5 text-xs">
+              <p className="mb-1 flex items-center gap-1.5">
+                <ConfidenceTag kind="unknown" /> <span className="text-muted-foreground">What public data can&apos;t tell us</span>
+              </p>
+              <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+                {intel.unknowns.map((u) => (
+                  <li key={u}>{u}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 
@@ -351,11 +393,11 @@ function IntelBody({
           </AccordionContent>
         </AccordionItem>
         <AccordionItem value="fit">
-          <AccordionTrigger className="px-1 text-sm">Why fit score {intel.fit_score}?</AccordionTrigger>
+          <AccordionTrigger className="px-1 text-sm">Why complexity {intel.fit_score}?</AccordionTrigger>
           <AccordionContent className="space-y-2 px-1">
             <p className="text-[11px] leading-snug text-muted-foreground">
-              A prioritisation hypothesis, not a conversion probability: it measures how much build, CI and review load the
-              public engineering signals suggest. Validate it against real outcomes as deals close.
+              Engineering complexity, not purchase likelihood: it measures how much build, CI and review load the public
+              signals suggest. Buying signals (above) are the evidence of actual need. Validate both against real deal outcomes.
             </p>
             {intel.fit_reasons.map((r) => (
               <div key={r.label} className="space-y-1">
@@ -544,13 +586,40 @@ function OutreachHook({
           </Tooltip>
         </span>
       </blockquote>
-      {tone === "primary" && intel.pitch_variants.angle && (
-        <p className="text-[11px] text-muted-foreground">
-          Built on their <span className="font-medium">{intel.pitch_variants.angle.replace(/-/g, " ")}</span> signal
+      {tone === "primary" && intel.pitch_variants.hookEvidence ? (
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          {intel.pitch_variants.hookType === "buying-signal" ? (
+            <>
+              <span className="font-semibold text-primary">Buying signal</span> (friction raised only as a question):{" "}
+            </>
+          ) : (
+            <>
+              <span className="font-semibold text-foreground">Context signal</span> (curiosity-led, no pain asserted):{" "}
+            </>
+          )}
+          {intel.pitch_variants.hookEvidence}
         </p>
+      ) : (
+        tone === "primary" &&
+        intel.pitch_variants.angle && (
+          <p className="text-[11px] text-muted-foreground">
+            Built on their <span className="font-medium">{intel.pitch_variants.angle.replace(/-/g, " ")}</span> signal
+          </p>
+        )
       )}
     </section>
   );
+}
+
+/** Observed = in the data · Hypothesis = Gemini's reasoning · Unknown = not visible publicly. */
+function ConfidenceTag({ kind }: { kind: "observed" | "hypothesis" | "unknown" }) {
+  const style = {
+    observed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+    hypothesis: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+    unknown: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+  }[kind];
+  const label = { observed: "Observed", hypothesis: "Hypothesis", unknown: "Unknown" }[kind];
+  return <span className={cn("inline-block rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide", style)}>{label}</span>;
 }
 
 function ArchitectureBadge({ arch }: { arch: Architecture }) {
@@ -663,7 +732,7 @@ function FitBadge({ intel }: { intel: EngineeringIntelligence }) {
   const c = 2 * Math.PI * r;
   return (
     <Tooltip>
-      <TooltipTrigger render={<div className="relative size-11 shrink-0 cursor-help" aria-label={`Fit score ${target} out of 100`} />}>
+      <TooltipTrigger render={<div className="relative size-11 shrink-0 cursor-help" aria-label={`Engineering complexity ${target} out of 100`} />}>
         <svg viewBox="0 0 40 40" className="size-11 -rotate-90">
           <circle cx="20" cy="20" r={r} className="fill-none stroke-muted" strokeWidth="4" />
           <circle
@@ -678,13 +747,14 @@ function FitBadge({ intel }: { intel: EngineeringIntelligence }) {
         </svg>
         <span className="absolute inset-0 flex flex-col items-center justify-center leading-none">
           <span className="text-sm font-semibold tabular-nums">{target}</span>
-          <span className="text-[8px] uppercase tracking-wide text-muted-foreground">fit</span>
+          <span className="text-[8px] uppercase tracking-wide text-muted-foreground">cplx</span>
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-64">
-        Fit score is a <b>prioritisation hypothesis</b>: 8 transparent, weighted signals from public engineering data
-        (velocity, CI complexity, microservices, hiring, stack, monorepo, infra). It ranks where a developer-productivity
-        tool is most likely relevant. It is not a validated probability of purchase.
+        <b>Engineering complexity</b> (0–100): 8 transparent, weighted signals from public engineering data (velocity,
+        CI complexity, microservices, hiring, stack, monorepo, infra). It measures how much build, CI and review load the
+        public signals suggest, which is a prioritisation hypothesis. It is <b>not</b> a probability of purchase; see
+        Buying signals for evidence of actual need.
       </TooltipContent>
     </Tooltip>
   );

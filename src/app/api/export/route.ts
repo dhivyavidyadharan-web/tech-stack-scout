@@ -14,7 +14,7 @@ export async function GET() {
   try {
     const rows = await loadWatchlist();
     const header = [
-      "Company", "Domain", "GitHub", "Overview", "Fit Score", "Velocity", "Active Repos (30d)", "Commits (30d)",
+      "Company", "Domain", "GitHub", "Overview", "Engineering Complexity", "Velocity", "Active Repos (30d)", "Commits (30d)",
       "Last Commit", "Top Languages", "Infrastructure (confirmed)", "Microservices", "Open Eng Roles", "Tools in Job Posts", "Latest News", "Latest Release", "Latest Blog Post", "Outreach Hook", "Engineering Summary", "Last Refreshed",
     ];
     const lines = rows.map((c) => {

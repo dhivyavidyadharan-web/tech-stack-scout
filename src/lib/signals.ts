@@ -192,6 +192,8 @@ const JOB_KEYWORDS: { name: string; re: RegExp }[] = [
   { name: "React", re: /\breact\b/i },
   { name: "Next.js", re: /\bnext\.?js\b/i },
 ];
+const PRODUCTIVITY_ROLE =
+  /\b(platform|developer (experience|productivity|tooling)|devex|dev ex|build|release|ci\/cd|\bci\b|tooling|infrastructure|sre|site reliability|engineering productivity|test infrastructure)\b/i;
 const MICROSERVICES_RE = /\b(micro-?services?|distributed systems?|service mesh|event[- ]driven)\b/i;
 
 function summariseJobs(provider: Provider, boardUrl: string, jobs: RawJob[]): HiringSignals {
@@ -213,9 +215,16 @@ function summariseJobs(provider: Provider, boardUrl: string, jobs: RawJob[]): Hi
     .sort((a, b) => b.tools.length - a.tools.length)
     .filter((j) => (seen.has(j.title) ? false : (seen.add(j.title), true)))
     .slice(0, 6);
+  // Roles whose day job IS developer productivity — the strongest hiring buying signal.
+  const productivityRoles = eng
+    .filter((j) => PRODUCTIVITY_ROLE.test(j.title))
+    .map((j) => ({ title: j.title.trim(), url: j.url }))
+    .filter((r, i, all) => all.findIndex((x) => x.title === r.title) === i)
+    .slice(0, 5);
   return {
     provider,
     boardUrl,
+    productivityRoles,
     totalRoles: jobs.length,
     engineeringRoles: eng.length,
     sampleTitles: [...new Set(eng.map((j) => j.title.trim()))].slice(0, 6),

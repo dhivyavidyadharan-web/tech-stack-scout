@@ -12,7 +12,7 @@
 - **"Building now"**: what the company is shipping *this month*, from **Google News**, **Hacker News**, **GitHub releases**, **newly created repos** and the company's **engineering blog** (RSS or Atom)
 - **A 1–2 sentence overview** on every card, with the full two-paragraph Gemini summary one click away
 - **Filters by language and by cloud/services**, plus velocity, microservices/hiring, and full-text search across companies, languages and tools
-- **A fit score (0–100)** with a plain-language breakdown, a **change history** between refreshes, **CSV export** and a one-click **account brief**
+- **Engineering complexity (0–100)** with a plain-language breakdown, kept separate from **Buying signals** (evidence of actual need), a **change history** between refreshes, **CSV export** and a one-click **account brief**
 
 Built with Next.js 16 (App Router, TypeScript, Tailwind v4, shadcn/ui), Supabase Postgres, the GitHub REST API, Gemini Flash and Vercel Cron.
 
@@ -150,9 +150,28 @@ The dashboard is intentionally open, with no login, so reviewers can use every f
 - **Secrets stay server-side:** the service-role key, GitHub token and Gemini key never reach the browser, and RLS denies the public anon key. The cron route needs `CRON_SECRET`.
 - **Optional login:** set `DASHBOARD_PASSWORD` to put the whole app behind Basic Auth.
 
+## From evidence to opener (how Dora avoids inventing pain)
+
+Dora separates three things that are easy to blur:
+
+| Layer | What it is | Example |
+|---|---|---|
+| **Engineering complexity** (0–100) | How much build, CI and review load the public signals suggest. 8 weighted factors, each with its contribution shown. | Vercel 98 |
+| **Buying signals** | Observed evidence that more directly suggests developer-productivity *need*, each linked to its source. In order of strength: hiring for platform, devex, build, CI or SRE roles; their own posts about builds, CI or devex; microservices; monorepo tooling; and (weakest) heavy CI setups. | Notion: hiring "Software Engineer, Developer Experience" |
+| **Context signals** | Interesting but not evidence of need: funding, acquisitions, launches, executive commentary. | "Supabase raises $150M" |
+
+**Opener rules, enforced in the Gemini prompt and the template fallback:**
+- Built on a buying signal → a friction may be raised only as a question that cites the signal.
+- Built on a context signal → curiosity-led, with no pain asserted or implied.
+- Each card shows which type the opener used and the exact evidence behind it.
+
+"Why it may matter" tags every line as **Observed** (in the data) or **Hypothesis** (reasoning), and an **Unknowns** box lists what public data can't show (e.g. real CI wait times, private repos).
+
+**Sparse-data test:** Notion has almost no public GitHub activity (0 commits in 30 days, Low velocity, complexity 29) but strong buying signals (it's hiring Developer Platform and Developer Experience engineers). That's why complexity and need are shown separately.
+
 ## Honest labelling (what the numbers do and don't mean)
 
-- **Fit score is a prioritisation hypothesis**, not a probability of purchase. It's built from 8 transparent, weighted public engineering signals, and each card shows the breakdown. It should be validated against real deal outcomes.
+- **Engineering complexity is not purchase likelihood.** It's a prioritisation hypothesis built from 8 transparent, weighted public engineering signals (stored as `fit_score`), and each card shows the breakdown. Buying signals are the evidence of need. Both should be validated against real deal outcomes.
 - **Velocity is observed *public* GitHub activity.** Private repositories aren't visible, so closed-source teams can look quieter than they are.
 - **"Detected in public code" ≠ "runs in production".** Evidence labels say exactly what was observed (in public code, in dependencies, in job posts, mentioned only), and Gemini is told to phrase infrastructure as "seen in your public repos".
 - **The template fallback never uses news.** Without Gemini's company-relevance check, the opener is built only from verified GitHub releases, repos, hiring and code facts. Template output is badged "Template summary".
@@ -188,7 +207,7 @@ You can override the search per company with `news_query` in Supabase.
 | Hiring | Public Greenhouse, Ashby and Lever APIs, probed with the GitHub handle, company name and domain. Engineering roles are filtered by title (sales and solutions roles excluded). Tools are counted per posting. |
 | Blog | `<link rel="alternate">` autodiscovery on the homepage and `/blog`, then common feed paths. Shows the 6 newest posts, which also go to Gemini. |
 | Velocity | **High**: ≥150 commits in 30 days or ≥8 repos pushed in 7 days. **Moderate**: ≥20 commits or ≥3 repos active in 30 days. **Low**: anything less. |
-| Fit score | Commit throughput 20 · active surface area 15 · CI/CD complexity 15 · microservices 10 · engineering hiring 10 · polyglot stack 10 · monorepo tooling 10 · infra depth 10 |
+| Engineering complexity | Commit throughput 20 · active surface area 15 · CI/CD complexity 15 · microservices 10 · engineering hiring 10 · polyglot stack 10 · monorepo tooling 10 · infra depth 10 |
 | Summary and hooks | Gemini Flash with a JSON response schema and a "facts only" system prompt, validated with zod. Retries once, then falls back to the template. |
 
 Without `GITHUB_TOKEN`, scans are automatically reduced (4 language, 2 commit and 2 tree lookups) to stay within 60 requests/hr.

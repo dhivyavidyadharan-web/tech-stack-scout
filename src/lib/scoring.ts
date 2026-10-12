@@ -15,7 +15,7 @@ export function velocityFrom(stats: Pick<RawStats, "commits30d" | "pushedLast7d"
 const clamp = (n: number, max: number) => Math.max(0, Math.min(max, Math.round(n)));
 
 /**
- * "Fit Score" (0–100): how likely this engineering org feels the pain a
+ * "Engineering complexity" (0–100, stored as fit_score): how much build/CI/review load the public signals suggest — the pain a
  * developer-productivity tool solves. Transparent and explainable — every
  * point maps to a reason the AE can repeat on a call. Weights total 100.
  */

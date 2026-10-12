@@ -46,6 +46,10 @@ export type PitchTone = "technical" | "executive" | "casual";
 export type PitchVariants = Partial<Record<PitchTone, string>> & {
   /** Which concrete fact the primary hook is built on, e.g. "hiring". */
   angle?: string;
+  /** buying-signal = evidence of dev-productivity need; context = interesting event, no pain asserted. */
+  hookType?: "buying-signal" | "context";
+  /** The exact observed fact the primary hook is built on. */
+  hookEvidence?: string;
 };
 
 export interface TopRepo {
@@ -77,6 +81,15 @@ export interface HiringSignals {
   microservicesMentions: number;
   /** Engineering postings that name the most tools — the JDs worth reading before a call. */
   matchingJobs?: JobPosting[];
+  /** Open roles that point at developer-productivity work (platform, devex, build, CI, release, SRE, tooling). */
+  productivityRoles?: { title: string; url: string | null }[];
+}
+
+/** Evidence that more directly suggests developer-productivity need than raw complexity. */
+export interface BuyingSignal {
+  kind: "hiring" | "content" | "ci" | "monorepo" | "architecture";
+  fact: string;
+  url: string | null;
 }
 
 export interface JobPosting {
@@ -147,6 +160,7 @@ export interface RawStats {
   blogPosts: BlogPost[];
   news: NewsItem[];
   building: Building;
+  buyingSignals: BuyingSignal[];
 }
 
 export interface WhyItMatters {
@@ -196,6 +210,9 @@ export interface EngineeringIntelligence {
   blog_posts: BlogPost[];
   overview: string | null;
   why_it_matters: WhyItMatters[];
+  buying_signals: BuyingSignal[];
+  /** What public data cannot tell us (private repos, actual CI durations, …). */
+  unknowns: string[];
   news: NewsItem[];
   building: Building | Record<string, never>;
 }

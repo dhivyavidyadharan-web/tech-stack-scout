@@ -42,7 +42,7 @@ How Next.js, Supabase, the GitHub REST API, Google Gemini Flash and Vercel Cron 
 │               │                 │ 1d fetchNews()            lib/signals.ts │─────┼──▶ Google News RSS · Hacker News (Algolia)
 │               │                 │ 1e filterRelevantNews()   lib/gemini.ts  │─────┼──▶ Gemini Flash (namesake filter)
 │               │                 │ 2 detectInfra() + detectArchitecture()   │     │
-│               │                 │ 3 velocityFrom() + fitScore() lib/scoring│     │
+│               │                 │ 3 velocity + complexity · buying signals │     │
 │               │                 │ 4 generateNarrative()    lib/gemini.ts   │─────┼──▶ Google Gemini Flash
 │               │                 │ 5 upsert intel + insert snapshot         │     │   (@google/genai)
 │               │                 └──────────────────┬───────────────────────┘     │
@@ -147,7 +147,7 @@ created_at   timestamptz     │    active_repo_count   int                   �
 - **Several live sources, like a human researcher.** GitHub shows how they build, job posts show what they hire for, and the blog shows what they're shipping. Tools named in job descriptions become *confirmed* infra tags with "Jobs (greenhouse): mentioned in N postings" as the evidence.
 - **Microservices from structure, not keywords.** Many Dockerfiles in separate directories, deployable roots under `services/`, `.proto` contracts and Kubernetes manifests count as strong signals. A compose file alone is weak.
 - **No code needed to manage the watchlist.** Rows added in the Supabase table editor are picked up by the daily `?mode=new` cron. The `jobs_board` and `blog_feed_url` columns can be overridden by hand.
-- **The fit score is explainable.** Eight weighted, capped factors (100 points total). Each reason is a sentence the AE can repeat on a call.
+- **Complexity ≠ need.** Engineering complexity (8 weighted factors, 100 points) is shown separately from linked buying signals. Openers raise a friction only as a question from a buying signal, and stay curiosity-led on context signals. Each reason is a sentence the AE can repeat on a call.
 - **`raw_stats` is cached.** Regenerating a pitch costs one Gemini call and zero GitHub calls.
 - **Security.** RLS denies everything to the anon key, the service-role key never reaches the browser, the cron route needs a bearer secret, Basic Auth is optional, and CSV export guards against formula injection.
 - **Cron resilience.** Oldest companies refresh first, there's a 240s time budget under `maxDuration=300`, a rate limit stops the run early, and whatever is left gets picked up next week.

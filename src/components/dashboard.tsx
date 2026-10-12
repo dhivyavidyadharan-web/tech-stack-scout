@@ -36,7 +36,7 @@ const SYNC_INTERVAL_MS = 60_000;
 
 type SortKey = "fit" | "velocity" | "recent" | "name";
 const SORTS: { value: SortKey; label: string }[] = [
-  { value: "fit", label: "Sort: Fit score" },
+  { value: "fit", label: "Sort: Complexity" },
   { value: "velocity", label: "Sort: Velocity" },
   { value: "recent", label: "Sort: Last push" },
   { value: "name", label: "Sort: Name" },
@@ -344,7 +344,7 @@ export function Dashboard({ initialCompanies }: { initialCompanies: CompanyWithI
       {
         key: "fit",
         icon: "fit",
-        label: "Average fit",
+        label: "Avg. complexity",
         value: loaded ? (metrics.avgFit ?? 0) : null,
         sub: best ? `Top: ${best.name} (${best.intelligence!.fit_score})` : "No scores yet",
         bars: list.map((c) => ({ label: c.name, value: c.intelligence!.fit_score ?? 0 })),
@@ -482,7 +482,7 @@ export function Dashboard({ initialCompanies }: { initialCompanies: CompanyWithI
                 </div>
               )}
             </Panel>
-            <Panel id="leaderboard" className="scroll-mt-24 lg:col-span-3" title="Leaderboard" subtitle="Ranked by fit hypothesis — click a row to open the account">
+            <Panel id="leaderboard" className="scroll-mt-24 lg:col-span-3" title="Leaderboard" subtitle="Ranked by engineering complexity — click a row to open the account">
               {companies === null ? <Skeleton className="h-56 w-full rounded-xl" /> : <Leaderboard companies={companies} onJump={jumpTo} />}
             </Panel>
           </div>

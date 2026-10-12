@@ -328,5 +328,6 @@ export async function collectOrgStats(handle: string): Promise<RawStats> {
     blogPosts: [],
     news: [],
     building: { releases, newRepos },
+    buyingSignals: [],
   };
 }

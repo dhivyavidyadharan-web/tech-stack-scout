@@ -68,7 +68,7 @@ export function HistoryPanel({ snapshots }: { snapshots: Snapshot[] }) {
                   {format(new Date(snap.captured_at), "MMM d, yyyy · HH:mm")}
                 </span>
                 <span className="font-mono text-muted-foreground">
-                  fit {snap.fit_score ?? "–"} · {snap.velocity_score ?? "–"} · {snap.commits_30d ?? 0} commits
+                  cplx {snap.fit_score ?? "–"} · {snap.velocity_score ?? "–"} · {snap.commits_30d ?? 0} commits
                 </span>
               </div>
               {prev && (
@@ -111,8 +111,8 @@ function Sparkline({ values }: { values: number[] }) {
   const last = pts[pts.length - 1];
   return (
     <div>
-      <div className="mb-1 text-[11px] text-muted-foreground">Fit score over time</div>
-      <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full overflow-visible text-primary" preserveAspectRatio="none" role="img" aria-label="Fit score trend">
+      <div className="mb-1 text-[11px] text-muted-foreground">Engineering complexity over time</div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full overflow-visible text-primary" preserveAspectRatio="none" role="img" aria-label="Engineering complexity trend">
         <path d={d} className="fill-none stroke-current" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
         <circle cx={last[0]} cy={last[1]} r="2.5" className="fill-current" />
       </svg>

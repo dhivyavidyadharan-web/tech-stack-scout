@@ -43,7 +43,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/pitch/[comp
     const { pitch } = await regeneratePitch(intel.raw_stats as RawStats, intel.velocity_score, tone, avoid);
 
     const update: Partial<EngineeringIntelligence> = {
-      pitch_variants: { ...intel.pitch_variants, [tone]: pitch, ...(parsed.data.makePrimary ? { angle: undefined } : {}) },
+      pitch_variants: { ...intel.pitch_variants, [tone]: pitch, ...(parsed.data.makePrimary ? { angle: undefined, hookType: undefined, hookEvidence: undefined } : {}) },
       ...(parsed.data.makePrimary ? { outreach_pitch: pitch } : {}),
     };
     const { data: saved, error: saveError } = await supabase
