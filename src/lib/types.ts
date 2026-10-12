@@ -18,6 +18,13 @@ export interface LanguageShare {
   percentage: number;
 }
 
+export interface EvidenceSource {
+  label: string;
+  url: string;
+  /** file = found in the repo tree · manifest = package.json dependency · job = job posting · mention = name/description/topic only */
+  kind: "file" | "manifest" | "job" | "mention";
+}
+
 export interface InfraTool {
   name: string;
   category: InfraCategory;
@@ -25,6 +32,8 @@ export interface InfraTool {
   evidence: string[];
   /** true = found in real files/manifests; false = only mentioned in names/topics. */
   confirmed: boolean;
+  /** Clickable proof for each evidence item (newer refreshes only). */
+  sources?: EvidenceSource[];
 }
 
 export interface FitReason {
@@ -140,6 +149,13 @@ export interface RawStats {
   building: Building;
 }
 
+export interface WhyItMatters {
+  /** What we observed (must be in the data). */
+  signal: string;
+  /** Why that makes the seller's product relevant. */
+  relevance: string;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -171,13 +187,15 @@ export interface EngineeringIntelligence {
   commits_30d: number | null;
   total_stars: number | null;
   top_repos: TopRepo[];
-  raw_stats: RawStats | Record<string, never>;
+  /** Full aggregate in the DB; trimmed to the fields the UI needs when sent to the browser. */
+  raw_stats: Partial<RawStats>;
   ai_model: string | null;
   refresh_error: string | null;
   hiring_signals: HiringSignals | null;
   architecture: Architecture | Record<string, never>;
   blog_posts: BlogPost[];
   overview: string | null;
+  why_it_matters: WhyItMatters[];
   news: NewsItem[];
   building: Building | Record<string, never>;
 }

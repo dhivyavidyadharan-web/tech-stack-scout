@@ -45,7 +45,7 @@ export function LiveFeed({ items, onJump }: { items: CompanyActivity[]; onJump: 
         const Icon = k.icon;
         return (
           <li key={keyOf(item)} className={cn("relative flex items-start gap-3 px-1 py-2", fresh.has(keyOf(item)) && "fresh")}>
-            <span className="w-16 shrink-0 pt-1.5 text-right text-[11px] tabular-nums text-muted-foreground">
+            <span className="w-16 shrink-0 pt-1.5 text-right text-[11px] tabular-nums text-muted-foreground" suppressHydrationWarning>
               {item.date ? ago(item.date).replace(" ago", "") : ""}
             </span>
             <span className={cn("relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full text-white ring-4 ring-card", k.tone)}>

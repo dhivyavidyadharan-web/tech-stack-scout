@@ -279,7 +279,7 @@ export async function collectOrgStats(handle: string): Promise<RawStats> {
     deps: [],
     text: [r.name, r.description ?? "", ...(r.topics ?? [])].join(" "),
   }));
-  const infra = detectInfra([...deepResults, ...shallow]);
+  const infra = detectInfra([...deepResults, ...shallow], login);
   const workflowFileCount = deepResults.reduce(
     (n, r) => n + r.paths.filter((p) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p)).length,
     0,

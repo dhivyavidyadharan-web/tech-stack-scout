@@ -50,11 +50,16 @@ export async function loadWatchlist(): Promise<CompanyWithIntel[]> {
     snapsByCompany.set(s.company_id, list);
   }
 
-  return (companies.data as Company[]).map((c) => ({
-    ...c,
-    intelligence: byCompany.get(c.id) ?? null,
-    snapshots: snapsByCompany.get(c.id) ?? [],
-  }));
+  return (companies.data as Company[]).map((c) => {
+    const intel = byCompany.get(c.id) ?? null;
+    return {
+      ...c,
+      // raw_stats is the full research aggregate (tens of KB per account) used server-side for
+      // re-prompting; the browser only needs one number from it.
+      intelligence: intel ? { ...intel, raw_stats: { reposAnalyzed: intel.raw_stats?.reposAnalyzed } } : null,
+      snapshots: snapsByCompany.get(c.id) ?? [],
+    };
+  });
 }
 
 export async function getCompany(id: string): Promise<Company | null> {

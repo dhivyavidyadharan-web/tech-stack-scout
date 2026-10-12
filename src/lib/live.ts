@@ -29,11 +29,12 @@ export function usePrefersReducedMotion(): boolean {
   );
 }
 
-/** Ease a number from its previous value to `target` (instant under reduced motion). */
+/** Ease a number from its previous value to `target` when it changes (instant under reduced motion). */
 export function useCountUp(target: number, duration = 900): number {
   const reduced = usePrefersReducedMotion();
-  const [value, setValue] = useState(0);
-  const from = useRef(0);
+  // Start at the real value so server-rendered HTML shows true numbers; later changes animate.
+  const [value, setValue] = useState(target);
+  const from = useRef(target);
 
   useEffect(() => {
     if (reduced) {

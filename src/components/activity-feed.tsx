@@ -106,7 +106,7 @@ export function ActivityList({ items }: { items: ActivityItem[] }) {
               <a href={item.url} target="_blank" rel="noreferrer" className="line-clamp-2 text-xs leading-snug hover:underline">
                 {item.title}
               </a>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground" suppressHydrationWarning>
                 {LABEL[item.kind]} · {item.meta}
                 {item.date ? ` · ${shortAgo(item.date)}` : ""}
               </p>

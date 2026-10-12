@@ -64,7 +64,9 @@ export function HistoryPanel({ snapshots }: { snapshots: Snapshot[] }) {
           return (
             <li key={snap.id} className="text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-medium">{format(new Date(snap.captured_at), "MMM d, yyyy · HH:mm")}</span>
+                <span className="font-medium" suppressHydrationWarning>
+                  {format(new Date(snap.captured_at), "MMM d, yyyy · HH:mm")}
+                </span>
                 <span className="font-mono text-muted-foreground">
                   fit {snap.fit_score ?? "–"} · {snap.velocity_score ?? "–"} · {snap.commits_30d ?? 0} commits
                 </span>

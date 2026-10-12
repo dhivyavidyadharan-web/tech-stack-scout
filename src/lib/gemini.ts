@@ -2,7 +2,7 @@ import "server-only";
 import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 import { env } from "./env";
-import type { NewsItem, PitchTone, PitchVariants, RawStats, VelocityScore } from "./types";
+import type { NewsItem, PitchTone, PitchVariants, RawStats, VelocityScore, WhyItMatters } from "./types";
 
 /**
  * All runtime LLM calls go through Google Gemini Flash (never Claude).
@@ -12,6 +12,8 @@ import type { NewsItem, PitchTone, PitchVariants, RawStats, VelocityScore } from
 export interface AiNarrative {
   /** 1–2 sentence TL;DR shown on the card; the full summary sits behind a dropdown. */
   overview: string;
+  /** Observed signal → why it matters for the seller's product. */
+  whyItMatters: WhyItMatters[];
   summary: string; // exactly two paragraphs separated by "\n\n"
   pitch: string;
   variants: PitchVariants;
@@ -37,6 +39,10 @@ const narrativeSchema = z.object({
   pitch_executive: z.string().min(20).max(320),
   pitch_casual: z.string().min(20).max(320),
   hook_angle: z.string().max(40).optional(),
+  why_it_matters: z
+    .array(z.object({ signal: z.string().min(5).max(220), relevance: z.string().min(5).max(260) }))
+    .min(1)
+    .max(3),
 });
 
 const SYSTEM = `You are a senior solutions engineer helping an enterprise account executive prepare for outreach.
@@ -154,6 +160,7 @@ Write:
 3. outreach_pitch: ONE sentence (max 30 words) cold-email opener built on the most distinctive candidate angle (prefer the top of the list). It must sound like it could only have been written to THIS company — name the specific role, post, repo or architecture detail. Connect it naturally to the seller's product.
 4. pitch_technical, pitch_executive, pitch_casual: one sentence each for a staff engineer, a VP of Engineering, and a friendly peer. Each must use a DIFFERENT angle from the list than outreach_pitch and from each other.
 5. hook_angle: the bracketed angle name outreach_pitch is built on (e.g. "hiring").
+6. why_it_matters: 2–3 items. Each "signal" is ONE concrete observed fact from the data (cite the number, repo, tool, role or headline); each "relevance" is ONE sentence on why that fact makes the seller's product relevant (the specific friction it creates — build time, CI queues, review load, onboarding, context-switching). No generic claims; if the data doesn't support a link, leave that item out.
 
 Rules for every pitch: do not open with a count of CI/GitHub Actions workflows or commits (the "delivery-pace" angle is a last resort); do not mention the product name; do not start with "I", "With", "Managing", "Following", "Scaling" or "Saw"; vary sentence structure; no generic phrases like "as your team scales".`;
 }
@@ -169,9 +176,17 @@ const responseSchema = {
     pitch_casual: { type: Type.STRING },
     hook_angle: { type: Type.STRING },
     overview: { type: Type.STRING },
+    why_it_matters: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: { signal: { type: Type.STRING }, relevance: { type: Type.STRING } },
+        required: ["signal", "relevance"],
+      },
+    },
   },
-  required: ["overview", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
-  propertyOrdering: ["overview", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
+  required: ["overview", "why_it_matters", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
+  propertyOrdering: ["overview", "why_it_matters", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
 };
 
 const oneParagraph = (s: string) => s.replace(/\s*\n+\s*/g, " ").replace(/\*\*/g, "").trim();
@@ -201,6 +216,7 @@ export async function generateNarrative(stats: RawStats, velocity: VelocityScore
       const parsed = narrativeSchema.parse(JSON.parse(res.text ?? "{}"));
       return {
         overview: oneParagraph(parsed.overview),
+        whyItMatters: parsed.why_it_matters.map((w) => ({ signal: oneParagraph(w.signal), relevance: oneParagraph(w.relevance) })),
         // Enforce the "exactly two paragraphs" contract regardless of model formatting.
         summary: `${oneParagraph(parsed.paragraph_1)}\n\n${oneParagraph(parsed.paragraph_2)}`,
         pitch: oneParagraph(parsed.outreach_pitch),
@@ -335,7 +351,17 @@ export function fallbackNarrative(stats: RawStats, velocity: VelocityScore): AiN
 
   const detail = flagship ? `${flagship.name}` : `your ${langs[0]?.name ?? "core"} services`;
   const now = hookAngles(stats).find((h) => ["news", "release", "new-repo"].includes(h.angle));
+  const whyItMatters: WhyItMatters[] = [
+    { signal: `${stats.commits30d} commits in 30 days across the busiest repos`, relevance: "High change volume means CI queue time and review latency are paid many times a day." },
+    ...(stats.workflowFileCount
+      ? [{ signal: `${stats.workflowFileCount} CI workflow files in the top repos`, relevance: "Complex pipelines are where faster, cached builds save the most engineering hours." }]
+      : []),
+    ...(stats.architecture.microservices === "Likely"
+      ? [{ signal: stats.architecture.signals[0], relevance: "Many independently built services multiply build, test and review overhead." }]
+      : []),
+  ].slice(0, 3);
   return {
+    whyItMatters,
     overview: `${name} builds primarily in ${langText}${flagship ? `, led by ${flagship.name}` : ""}.${now ? ` ${now.fact}.` : ""}`.replace(/\.\./g, "."),
     summary: `${p1.replace(/\s+/g, " ").trim()}\n\n${p2.replace(/\s+/g, " ").trim()}`,
     pitch: `${hookAngles(stats)[0]?.fact ?? `${stats.commits30d} commits landed across ${detail} this month`} caught my eye — curious how much of your engineers' week goes to waiting on builds and reviews?`,

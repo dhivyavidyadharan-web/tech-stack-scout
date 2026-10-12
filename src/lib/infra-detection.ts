@@ -1,4 +1,4 @@
-import type { Architecture, InfraCategory, InfraTool, MicroservicesVerdict } from "./types";
+import type { Architecture, EvidenceSource, InfraCategory, InfraTool, MicroservicesVerdict } from "./types";
 
 /** Signals gathered for one repository. Deep-scanned repos carry paths + deps; all repos carry text. */
 export interface RepoSignals {
@@ -56,15 +56,17 @@ const MAX_EVIDENCE = 4;
  * Deep-scan evidence (actual files) is listed before keyword matches so the
  * strongest proof is shown first in the UI.
  */
-export function detectInfra(signals: RepoSignals[]): InfraTool[] {
+export function detectInfra(signals: RepoSignals[], org?: string): InfraTool[] {
   const found = new Map<string, InfraTool & { strong: number }>();
+  const repoUrl = (repo: string) => (org ? `https://github.com/${org}/${repo}` : "");
 
-  const add = (rule: Rule, evidence: string, strong: boolean) => {
+  const add = (rule: Rule, evidence: string, strong: boolean, source?: EvidenceSource) => {
     const entry = found.get(rule.name) ?? {
       name: rule.name,
       category: rule.category,
       evidence: [],
       confirmed: false,
+      sources: [],
       strong: 0,
     };
     if (strong) entry.strong++;
@@ -73,6 +75,11 @@ export function detectInfra(signals: RepoSignals[]): InfraTool[] {
       else entry.evidence.push(evidence);
       entry.evidence = entry.evidence.slice(0, MAX_EVIDENCE);
     }
+    if (source?.url && !entry.sources!.some((x) => x.url === source.url) && entry.sources!.length < MAX_EVIDENCE) {
+      if (strong) entry.sources!.unshift(source);
+      else entry.sources!.push(source);
+      entry.sources = entry.sources!.slice(0, MAX_EVIDENCE);
+    }
     found.set(rule.name, entry);
   };
 
@@ -80,14 +87,30 @@ export function detectInfra(signals: RepoSignals[]): InfraTool[] {
     for (const rule of RULES) {
       if (rule.path) {
         const hit = s.paths.find((p) => rule.path!.test(p));
-        if (hit) add(rule, `${s.repo}: ${hit.length > 48 ? "…/" + base(hit) : hit}`, true);
+        if (hit) {
+          add(rule, `${s.repo}: ${hit.length > 48 ? "…/" + base(hit) : hit}`, true, {
+            label: `${s.repo}/${hit}`,
+            url: org ? `${repoUrl(s.repo)}/blob/HEAD/${hit}` : "",
+            kind: "file",
+          });
+        }
       }
       if (rule.deps) {
         const dep = s.deps.find((d) => rule.deps!.test(d));
-        if (dep) add(rule, `${s.repo}: depends on ${dep}`, true);
+        if (dep) {
+          add(rule, `${s.repo}: depends on ${dep}`, true, {
+            label: `${s.repo}/package.json → ${dep}`,
+            url: org ? `${repoUrl(s.repo)}/blob/HEAD/package.json` : "",
+            kind: "manifest",
+          });
+        }
       }
       if (rule.keyword && s.text && rule.keyword.test(s.text)) {
-        add(rule, `${s.repo}: mentioned in repo name/description/topics`, false);
+        add(rule, `${s.repo}: mentioned in repo name/description/topics`, false, {
+          label: `${s.repo} (name, description or topics)`,
+          url: repoUrl(s.repo),
+          kind: "mention",
+        });
       }
     }
   }
@@ -95,7 +118,7 @@ export function detectInfra(signals: RepoSignals[]): InfraTool[] {
   const order = RULES.map((r) => r.name);
   return [...found.values()]
     .sort((a, b) => b.strong - a.strong || order.indexOf(a.name) - order.indexOf(b.name))
-    .map(({ name, category, evidence, strong }) => ({ name, category, evidence, confirmed: strong > 0 }));
+    .map(({ name, category, evidence, sources, strong }) => ({ name, category, evidence, sources, confirmed: strong > 0 }));
 }
 
 // ── Architecture: microservices detection ────────────────────────────────────
@@ -157,19 +180,28 @@ function verdictFrom(strong: string[], weak: string[]): Architecture {
 }
 
 /** Merge tools found in job descriptions into the infra list as confirmed evidence. */
-export function withJobEvidence(infra: InfraTool[], tools: { name: string; count: number }[], provider: string): InfraTool[] {
+export function withJobEvidence(
+  infra: InfraTool[],
+  tools: { name: string; count: number }[],
+  provider: string,
+  boardUrl?: string,
+): InfraTool[] {
   const known = new Map(RULES.map((r) => [r.name, r.category]));
-  const out = infra.map((t) => ({ ...t, evidence: [...t.evidence] }));
+  const out = infra.map((t) => ({ ...t, evidence: [...t.evidence], sources: [...(t.sources ?? [])] }));
   for (const tool of tools) {
     const category = known.get(tool.name);
     if (!category) continue; // languages/datastores are shown in the Hiring section instead
     const evidence = `Jobs (${provider}): mentioned in ${tool.count} engineering posting${tool.count > 1 ? "s" : ""}`;
+    const source: EvidenceSource | null = boardUrl
+      ? { label: `${tool.count} ${provider} posting${tool.count > 1 ? "s" : ""} mention ${tool.name}`, url: boardUrl, kind: "job" }
+      : null;
     const existing = out.find((t) => t.name === tool.name);
     if (existing) {
       existing.confirmed = true;
       existing.evidence = [evidence, ...existing.evidence].slice(0, MAX_EVIDENCE);
+      if (source) existing.sources = [source, ...existing.sources].slice(0, MAX_EVIDENCE);
     } else {
-      out.push({ name: tool.name, category, evidence: [evidence], confirmed: true });
+      out.push({ name: tool.name, category, evidence: [evidence], confirmed: true, sources: source ? [source] : [] });
     }
   }
   return out;

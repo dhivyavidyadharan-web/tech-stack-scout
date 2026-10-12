@@ -44,7 +44,14 @@ export function StatusStrip() {
         ? "Gemini Flash generates summaries and hooks"
         : `${health.gemini.detail ?? "Gemini unavailable"}. Using template summaries until fixed.`,
     },
-    { label: "Weekly cron", ok: health.cron.configured, warn: !health.cron.configured, tip: health.cron.configured ? "CRON_SECRET set — refresh runs Sundays 00:00 UTC" : "CRON_SECRET not set — cron endpoint will reject calls" },
+    {
+      label: `Next refresh ${nextWeeklyRun()}`,
+      ok: health.cron.configured,
+      warn: !health.cron.configured,
+      tip: health.cron.configured
+        ? "Vercel Cron re-researches every account older than 7 days each Sunday 00:00 UTC, and enriches newly added accounts daily at 06:00 UTC."
+        : "CRON_SECRET not set — cron endpoint will reject calls",
+    },
   ];
 
   return (
@@ -60,4 +67,11 @@ export function StatusStrip() {
       ))}
     </div>
   );
+}
+
+/** Next Sunday 00:00 UTC (the weekly Vercel Cron in vercel.json), as a local day/time label. */
+function nextWeeklyRun(): string {
+  const now = new Date();
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + ((7 - now.getUTCDay()) % 7 || 7)));
+  return next.toLocaleString("en", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }

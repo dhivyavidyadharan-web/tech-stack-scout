@@ -56,8 +56,8 @@ const ARCHITECTURES = [
 const STACK_CATEGORIES = new Set(["Cloud", "Orchestration", "Container", "IaC", "Hosting"]);
 const VELOCITY_RANK: Record<VelocityScore, number> = { High: 2, Moderate: 1, Low: 0 };
 
-export function Dashboard() {
-  const [companies, setCompanies] = useState<CompanyWithIntel[] | null>(null);
+export function Dashboard({ initialCompanies }: { initialCompanies: CompanyWithIntel[] | null }) {
+  const [companies, setCompanies] = useState<CompanyWithIntel[] | null>(initialCompanies);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
@@ -89,10 +89,11 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
-    // Initial fetch of the watchlist; setState happens after the network round-trip.
+    // Server-rendered data is already fresh: just stamp the sync time. Otherwise fetch now.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-  }, [load]);
+    if (initialCompanies) setLastSync(Date.now());
+    else void load();
+  }, [load, initialCompanies]);
 
   // Live: quietly re-sync while the tab is visible, so cron refreshes and teammates' changes appear.
   const bulkRunning = bulk !== null;
@@ -353,9 +354,9 @@ export function Dashboard() {
         key: "signals",
         icon: "signals",
         label: "Signals this week",
-        value: loaded ? week.length : null,
+        value: loaded && minute ? week.length : null,
         sub: "News, releases & posts · last 7 days",
-        bars: perDay,
+        bars: minute ? perDay : [],
         gradient: "bg-gradient-to-br from-[oklch(0.7_0.14_355)] to-[oklch(0.5_0.1_165)]",
       },
     ];
@@ -380,7 +381,7 @@ export function Dashboard() {
                 <h1 className="font-display text-2xl font-semibold tracking-tight">Welcome back, Nikhil</h1>
                 <p className="text-xs text-muted-foreground">Here&apos;s what your accounts are building right now.</p>
               </div>
-              <SyncIndicator lastSync={lastSync} syncing={syncing} onSync={() => void load()} />
+              <SyncIndicator lastSync={lastSync} syncing={syncing} hasData={companies !== null} onSync={() => void load()} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <ThemeToggle />
@@ -448,7 +449,8 @@ export function Dashboard() {
               title="Market pulse"
               subtitle="What your watchlist shipped and said, week by week"
             >
-              {companies === null ? <Skeleton className="h-56 w-full rounded-xl" /> : <ActivityPulse weeks={pulse} />}
+              {/* Time-windowed: drawn once the client clock is running (keeps SSR + hydration identical). */}
+              {companies === null || !minute ? <Skeleton className="h-56 w-full rounded-xl" /> : <ActivityPulse weeks={pulse} />}
             </Panel>
             <Panel title="Stack mix" subtitle="Confirmed infrastructure signals across accounts">
               {companies === null ? <Skeleton className="mx-auto size-44 rounded-full" /> : <StackMix {...mix} />}
@@ -555,8 +557,20 @@ export function Dashboard() {
 }
 
 /** Owns the 1s clock so only this badge re-renders every second, not the whole dashboard. */
-function SyncIndicator({ lastSync, syncing, onSync }: { lastSync: number | null; syncing: boolean; onSync: () => void }) {
+function SyncIndicator({
+  lastSync,
+  syncing,
+  hasData,
+  onSync,
+}: {
+  lastSync: number | null;
+  syncing: boolean;
+  hasData: boolean;
+  onSync: () => void;
+}) {
   const now = useNow(1000);
+  // Server-rendered data is fresh at request time, before the client clock starts.
+  const label = syncing ? "syncing…" : lastSync && now ? `synced ${sinceLabel(lastSync, now)}` : hasData ? "synced just now" : "connecting…";
   return (
     <button
       onClick={onSync}
@@ -569,7 +583,7 @@ function SyncIndicator({ lastSync, syncing, onSync }: { lastSync: number | null;
         <span className="relative inline-flex size-2 rounded-full bg-emerald-brand" />
       </span>
       <span className="font-semibold text-foreground">Live</span>
-      <span className="whitespace-nowrap tabular-nums">{syncing ? "syncing…" : `synced ${sinceLabel(lastSync, now)}`}</span>
+      <span className="whitespace-nowrap tabular-nums">{label}</span>
       <RotateCw className={cn("size-3 opacity-60 group-hover:opacity-100", syncing && "animate-spin")} />
     </button>
   );

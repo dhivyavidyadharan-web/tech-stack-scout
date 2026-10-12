@@ -133,6 +133,13 @@ Errors always come back as `{ error, code, resetAt? }`. `code` is one of `GITHUB
 
 ---
 
+## Trust & evidence (why a rep can rely on it before a call)
+
+- **Every claim links to its proof.** Each card's *Evidence & sources* panel lists every technology claim with its type (**Repo file**, **Dependency**, **Job posting**, **Measured** or **Mention only**), a clickable link to the exact GitHub file, `package.json`, job board or repo, and the date observed. A "mention only" signal is never counted as confirmed.
+- **Observation → relevance → opener.** Each card shows *Why it matters for your product*: 2–3 Gemini-written pairs that tie one observed fact (a number, repo, tool, role or headline) to the specific friction the seller's product removes, followed by the outreach opener.
+- **Freshness is visible.** A per-account source row (GitHub ✓ · Jobs · Blog ✓ · News 8 · HN 2 · Gemini) shows what the last refresh actually used. The status strip shows the next scheduled weekly refresh, and the "Live · synced Xs ago" badge shows the last client sync.
+- **Server-rendered.** The first HTML response already contains every account, summary, opener and evidence item, so the product is complete even before JavaScript runs.
+
 ## Data sources: what we use and why
 
 Tech Stack Scout automates the three research tasks an AE currently does by hand.

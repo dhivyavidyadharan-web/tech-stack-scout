@@ -25,7 +25,7 @@ export async function enrichCompany(company: Company): Promise<EngineeringIntell
   stats.blogPosts = blog.posts;
   stats.news = await filterRelevantNews({ name: company.name, domain: company.domain, description: stats.orgDescription }, news);
   if (jobs.hiring) {
-    stats.infra = withJobEvidence(stats.infra, jobs.hiring.tools, jobs.hiring.provider);
+    stats.infra = withJobEvidence(stats.infra, jobs.hiring.tools, jobs.hiring.provider, jobs.hiring.boardUrl);
     stats.architecture = withHiringEvidence(stats.architecture, jobs.hiring.microservicesMentions, jobs.hiring.engineeringRoles);
   }
 
@@ -57,6 +57,7 @@ export async function enrichCompany(company: Company): Promise<EngineeringIntell
     architecture: stats.architecture,
     blog_posts: stats.blogPosts,
     overview: narrative.overview,
+    why_it_matters: narrative.whyItMatters,
     news: stats.news,
     building: stats.building,
   };
