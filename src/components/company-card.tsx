@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -69,10 +70,21 @@ export function CompanyCard({ company, refreshing, onRefresh, onRemove, onIntelU
   const [removing, setRemoving] = useState(false);
 
   return (
-    <Card className={cn("relative flex flex-col gap-0 py-0 transition-opacity", removing && "opacity-50")}>
+    <Card
+      id={`card-${company.id}`}
+      className={cn("hover-glow relative flex scroll-mt-24 flex-col gap-0 rounded-2xl py-0 shadow-soft transition-opacity", removing && "opacity-50")}
+    >
       <CardHeader className="gap-2 border-b px-4 py-3.5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-3">
+            <Image
+              src={`https://github.com/${company.github_org}.png?size=96`}
+              alt=""
+              width={40}
+              height={40}
+              className="size-10 shrink-0 rounded-xl bg-muted ring-2 ring-accent"
+            />
+            <div className="min-w-0">
             <h3 className="truncate text-base font-semibold leading-tight">{company.name}</h3>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
               <a
@@ -94,6 +106,7 @@ export function CompanyCard({ company, refreshing, onRefresh, onRemove, onIntelU
                   <ExternalLink className="size-2.5" />
                 </a>
               )}
+            </div>
             </div>
           </div>
           {hasData && intel?.fit_score !== null && intel?.fit_score !== undefined && <FitBadge intel={intel} />}
@@ -600,27 +613,33 @@ function VelocityTag({ velocity, lastActivity }: { velocity: VelocityScore; last
 }
 
 function FitBadge({ intel }: { intel: EngineeringIntelligence }) {
-  const score = intel.fit_score ?? 0;
-  const color = score >= 70 ? "text-emerald-600" : score >= 45 ? "text-amber-600" : "text-zinc-500";
+  const target = intel.fit_score ?? 0;
+  // Draw the ring from 0 on mount (CSS transition does the animation).
+  const [score, setScore] = useState(0);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setScore(target));
+    return () => cancelAnimationFrame(id);
+  }, [target]);
+  const color = target >= 70 ? "text-emerald-600" : target >= 45 ? "text-amber-600" : "text-zinc-500";
   const r = 16;
   const c = 2 * Math.PI * r;
   return (
     <Tooltip>
-      <TooltipTrigger render={<div className="relative size-11 shrink-0 cursor-help" aria-label={`Fit score ${score} out of 100`} />}>
+      <TooltipTrigger render={<div className="relative size-11 shrink-0 cursor-help" aria-label={`Fit score ${target} out of 100`} />}>
         <svg viewBox="0 0 40 40" className="size-11 -rotate-90">
           <circle cx="20" cy="20" r={r} className="fill-none stroke-muted" strokeWidth="4" />
           <circle
             cx="20"
             cy="20"
             r={r}
-            className={cn("fill-none stroke-current transition-all", color)}
+            className={cn("fill-none stroke-current transition-[stroke-dasharray] duration-1000 ease-out", color)}
             strokeWidth="4"
             strokeLinecap="round"
             strokeDasharray={`${(score / 100) * c} ${c}`}
           />
         </svg>
         <span className="absolute inset-0 flex flex-col items-center justify-center leading-none">
-          <span className="text-sm font-semibold tabular-nums">{score}</span>
+          <span className="text-sm font-semibold tabular-nums">{target}</span>
           <span className="text-[8px] uppercase tracking-wide text-muted-foreground">fit</span>
         </span>
       </TooltipTrigger>

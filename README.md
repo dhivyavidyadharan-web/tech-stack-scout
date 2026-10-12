@@ -1,6 +1,6 @@
-# Tech Stack Scout
+# Dora · Tech Stack Scout
 
-A sales intelligence dashboard for enterprise Account Executives who sell developer productivity tools. For every target account it pulls **live GitHub data** and shows:
+**Dora** is a sales intelligence dashboard for enterprise Account Executives who sell developer productivity tools. For every target account it pulls **live GitHub data** and shows:
 
 - **Dominant languages**, by share of code bytes (docs and prose excluded)
 - **Cloud and infrastructure tooling**: Docker, Kubernetes, Terraform, AWS, GCP, GitHub Actions, Turborepo, and more. Each tag comes with file-level evidence and is marked *confirmed* or *mentioned*.
@@ -15,6 +15,16 @@ A sales intelligence dashboard for enterprise Account Executives who sell develo
 - **A fit score (0–100)** with a plain-language breakdown, a **change history** between refreshes, **CSV export** and a one-click **account brief**
 
 Built with Next.js 16 (App Router, TypeScript, Tailwind v4, shadcn/ui), Supabase Postgres, the GitHub REST API, Gemini Flash and Vercel Cron.
+
+### The dashboard
+
+- **Gradient stat tiles** with count-up numbers and mini charts: accounts and hiring, high velocity, average fit, signals this week
+- **Market pulse:** weekly news, releases and blog activity across the watchlist (area chart with crosshair tooltip)
+- **Stack mix:** donut of confirmed infrastructure signals, with a value table
+- **Live feed:** cross-account timeline. New items flash after each background sync (every 60s while the tab is visible, and straight away when you return to it).
+- **Headline ticker**, a **leaderboard** ranked by fit (click a row to jump to the account), and a **"Live · synced 12s ago"** indicator
+- **Design:** baby pink × emerald × olive, with Fraunces + Plus Jakarta Sans, a grain texture and slowly drifting glows. All motion respects `prefers-reduced-motion`.
+- **Chart colours** come from a categorical palette checked with a colour-vision-deficiency validator for both light and dark surfaces. Pink and emerald are separated by lightness, so red-green colour-blind readers can still tell them apart.
 See [COMPONENTS_MAP.md](COMPONENTS_MAP.md) for the architecture diagrams.
 
 ---

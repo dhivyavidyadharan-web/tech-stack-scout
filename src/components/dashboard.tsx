@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Activity, Building2, ChevronDown, Download, Gauge, Loader2, Radar, RefreshCw, Search, Sparkles, TimerReset } from "lucide-react";
+import { ChevronDown, Download, Loader2, Radar, RefreshCw, RotateCw, Search, Sparkles, TimerReset } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import {
@@ -16,11 +16,23 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiClientError, apiFetch, isStale, toastApiError } from "@/lib/client";
+import { sinceLabel, useNow } from "@/lib/live";
 import type { CompanyWithIntel, EngineeringIntelligence, VelocityScore } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { stackMix, watchlistActivity, weeklyPulse } from "@/lib/viz";
 import { AddCompanyDialog } from "./add-company-dialog";
+import { ActivityPulse } from "./charts/activity-pulse";
+import { StackMix } from "./charts/stack-mix";
 import { CardBodySkeleton, CompanyCard } from "./company-card";
+import { Leaderboard } from "./leaderboard";
+import { LiveFeed } from "./live-feed";
+import { DoraMark, Sidebar } from "./sidebar";
+import { StatTiles, type TileSpec } from "./stat-tiles";
 import { StatusStrip } from "./status-strip";
 import { ThemeToggle } from "./theme-toggle";
+import { Ticker } from "./ticker";
+
+const SYNC_INTERVAL_MS = 60_000;
 
 type SortKey = "fit" | "velocity" | "recent" | "name";
 const SORTS: { value: SortKey; label: string }[] = [
@@ -56,15 +68,23 @@ export function Dashboard() {
   const [arch, setArch] = useState("all");
   const [sort, setSort] = useState<SortKey>("fit");
   const cancelBulk = useRef(false);
+  const [lastSync, setLastSync] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  // Coarse clock for time-window maths (weekly pulse, "this week") — keeps render pure.
+  const minute = useNow(60_000);
 
   const load = useCallback(async () => {
+    setSyncing(true);
     try {
       const res = await apiFetch<{ companies: CompanyWithIntel[] }>("/api/companies");
       setCompanies(res.companies);
       setLoadError(null);
+      setLastSync(Date.now());
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load watchlist");
       setCompanies((c) => c ?? []);
+    } finally {
+      setSyncing(false);
     }
   }, []);
 
@@ -73,6 +93,23 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
+
+  // Live: quietly re-sync while the tab is visible, so cron refreshes and teammates' changes appear.
+  const bulkRunning = bulk !== null;
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible" && !bulkRunning) void load();
+    }, SYNC_INTERVAL_MS);
+    // Coming back to the tab: catch up immediately instead of waiting for the next tick.
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !bulkRunning) void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [load, bulkRunning]);
 
   const setBusy = (id: string, busy: boolean) =>
     setRefreshing((prev) => {
@@ -227,154 +264,343 @@ export function Dashboard() {
 
   const filtersActive = query || stack !== "all" || language !== "all" || velocity !== "all" || arch !== "all";
 
+  const clearFilters = () => {
+    setQuery("");
+    setStack("all");
+    setLanguage("all");
+    setVelocity("all");
+    setArch("all");
+  };
+
+  /** Scroll to an account card (clearing filters if they hide it) and flash it. */
+  const jumpTo = (id: string) => {
+    if (!visible.some((c) => c.id === id)) clearFilters();
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        const el = document.getElementById(`card-${id}`);
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.classList.remove("flash");
+        void el.offsetWidth; // restart the animation
+        el.classList.add("flash");
+      }, 50),
+    );
+  };
+
+  const activity = useMemo(() => watchlistActivity(companies ?? []), [companies]);
+  // Variety over volume: at most 2 items per company per kind (frequent releases would flood it).
+  const feedItems = useMemo(() => {
+    const seen = new Map<string, number>();
+    return activity
+      .filter((a) => {
+        const k = `${a.companyId}:${a.kind}`;
+        const n = seen.get(k) ?? 0;
+        seen.set(k, n + 1);
+        return n < 2;
+      })
+      .slice(0, 14);
+  }, [activity]);
+  const pulse = useMemo(() => weeklyPulse(activity, 8, minute), [activity, minute]);
+  const mix = useMemo(() => stackMix(companies ?? []), [companies]);
+
+  const tiles = useMemo<TileSpec[]>(() => {
+    const list = (companies ?? []).filter((c) => c.intelligence?.last_refreshed_at);
+    const loaded = companies !== null;
+    const hiring = list.filter((c) => (c.intelligence!.hiring_signals?.engineeringRoles ?? 0) > 0);
+    const commits = list.reduce((s, c) => s + (c.intelligence!.commits_30d ?? 0), 0);
+    const best = [...list].sort((a, b) => (b.intelligence!.fit_score ?? 0) - (a.intelligence!.fit_score ?? 0))[0];
+    const DAY = 86_400_000;
+    const week = activity.filter((a) => minute - new Date(a.date!).getTime() < 7 * DAY);
+    const perDay = Array.from({ length: 7 }, (_, i) => {
+      const dayStart = minute - (7 - i) * DAY;
+      return {
+        label: new Date(dayStart + DAY).toLocaleDateString("en", { weekday: "short" }),
+        value: week.filter((a) => {
+          const t = new Date(a.date!).getTime();
+          return t >= dayStart && t < dayStart + DAY;
+        }).length,
+      };
+    });
+    return [
+      {
+        key: "accounts",
+        icon: "accounts",
+        label: "Accounts tracked",
+        value: loaded ? metrics.total : null,
+        sub: `${hiring.length} ${hiring.length === 1 ? "account is" : "accounts are"} hiring engineers`,
+        bars: list.map((c) => ({ label: c.name, value: c.intelligence!.hiring_signals?.engineeringRoles ?? 0 })),
+        gradient: "bg-gradient-to-br from-[oklch(0.72_0.14_355)] to-[oklch(0.56_0.17_350)]",
+      },
+      {
+        key: "velocity",
+        icon: "velocity",
+        label: "High velocity",
+        value: loaded ? metrics.high : null,
+        sub: `${commits.toLocaleString()} commits in 30 days`,
+        bars: list.map((c) => ({ label: c.name, value: c.intelligence!.commits_30d ?? 0 })),
+        gradient: "bg-gradient-to-br from-[oklch(0.66_0.12_165)] to-[oklch(0.46_0.1_170)]",
+      },
+      {
+        key: "fit",
+        icon: "fit",
+        label: "Average fit",
+        value: loaded ? (metrics.avgFit ?? 0) : null,
+        sub: best ? `Top: ${best.name} (${best.intelligence!.fit_score})` : "No scores yet",
+        bars: list.map((c) => ({ label: c.name, value: c.intelligence!.fit_score ?? 0 })),
+        gradient: "bg-gradient-to-br from-[oklch(0.7_0.12_118)] to-[oklch(0.5_0.1_130)]",
+      },
+      {
+        key: "signals",
+        icon: "signals",
+        label: "Signals this week",
+        value: loaded ? week.length : null,
+        sub: "News, releases & posts · last 7 days",
+        bars: perDay,
+        gradient: "bg-gradient-to-br from-[oklch(0.7_0.14_355)] to-[oklch(0.5_0.1_165)]",
+      },
+    ];
+  }, [companies, activity, metrics, minute]);
+
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      {/* Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Radar className="size-5" />
+    <div className="relative z-10 flex min-h-screen w-full">
+      <Sidebar
+        counts={{
+          leaderboard: companies?.filter((c) => c.intelligence?.last_refreshed_at).length,
+          accounts: companies?.length,
+        }}
+      />
+
+      <div className="min-w-0 flex-1">
+        {/* Top bar */}
+        <header className="glass sticky top-0 z-30 border-b">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-4">
+              <DoraMark className="lg:hidden" />
+              <div className="hidden lg:block">
+                <h1 className="font-display text-2xl font-semibold tracking-tight">Welcome back, Nikhil</h1>
+                <p className="text-xs text-muted-foreground">Here&apos;s what your accounts are building right now.</p>
+              </div>
+              <SyncIndicator lastSync={lastSync} syncing={syncing} onSync={() => void load()} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ThemeToggle />
+              <Button variant="outline" nativeButton={false} render={<a href="/api/export" download />} aria-disabled={!companies?.length}>
+                <Download /> <span className="hidden sm:inline">Export CSV</span>
+              </Button>
+              {bulk ? (
+                <Button variant="outline" onClick={() => (cancelBulk.current = true)}>
+                  <Loader2 className="animate-spin" /> {bulk.done}/{bulk.total} · Stop
+                </Button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="outline" disabled={!companies?.length} />}>
+                    <RefreshCw /> Refresh <ChevronDown className="opacity-60" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => refreshMany("stale")}>
+                      <TimerReset /> Refresh stale ({metrics.stale})
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => refreshMany("all")}>
+                      <RefreshCw /> Refresh all ({metrics.total})
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <AddCompanyDialog existingOrgs={companies?.map((c) => c.github_org) ?? []} onAdded={() => void load()} />
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Tech Stack Scout</h1>
-            <p className="text-sm text-muted-foreground">Live engineering intelligence for your target accounts</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ThemeToggle />
-          <Button variant="outline" nativeButton={false} render={<a href="/api/export" download />} aria-disabled={!companies?.length}>
-            <Download /> Export CSV
-          </Button>
-          {bulk ? (
-            <Button variant="outline" onClick={() => (cancelBulk.current = true)}>
-              <Loader2 className="animate-spin" /> {bulk.done}/{bulk.total} · Stop
-            </Button>
-          ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" disabled={!companies?.length} />}>
-                <RefreshCw /> Refresh <ChevronDown className="opacity-60" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => refreshMany("stale")}>
-                  <TimerReset /> Refresh stale ({metrics.stale})
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => refreshMany("all")}>
-                  <RefreshCw /> Refresh all ({metrics.total})
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {bulk && (
+            <div className="space-y-1 px-4 pb-3 sm:px-6 lg:px-8">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Scanning GitHub, job boards & news, then briefing with Gemini Flash…</span>
+                <span>
+                  {bulk.done} of {bulk.total}
+                </span>
+              </div>
+              <Progress value={(bulk.done / bulk.total) * 100} />
+            </div>
           )}
-          <AddCompanyDialog
-            existingOrgs={companies?.map((c) => c.github_org) ?? []}
-            onAdded={() => void load()}
-          />
-        </div>
-      </header>
+        </header>
 
-      <StatusStrip />
+        <div className="mx-auto w-full max-w-[1400px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+          {/* Overview */}
+          <section id="overview" className="scroll-mt-24 space-y-4">
+            <StatusStrip />
+            <StatTiles tiles={tiles} />
+            <Ticker items={activity} />
+            {companies && metrics.unenriched > 0 && !bulk && (
+              <div className="glass flex flex-col items-start justify-between gap-3 rounded-2xl border border-primary/25 px-4 py-3 shadow-soft sm:flex-row sm:items-center">
+                <p className="text-sm">
+                  <Sparkles className="mr-1.5 inline size-4 text-primary" />
+                  {metrics.unenriched} account{metrics.unenriched > 1 ? "s have" : " has"} no intelligence yet.
+                </p>
+                <Button size="sm" onClick={() => refreshMany("stale")}>
+                  Enrich {metrics.unenriched > 1 ? "them" : "it"} now
+                </Button>
+              </div>
+            )}
+          </section>
 
-      {bulk && (
-        <div className="mt-4 space-y-1.5">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Scanning GitHub and generating briefs with Gemini Flash…</span>
-            <span>
-              {bulk.done} of {bulk.total}
-            </span>
-          </div>
-          <Progress value={(bulk.done / bulk.total) * 100} />
-        </div>
-      )}
-
-      {/* Metrics */}
-      <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric icon={<Building2 />} label="Total accounts" value={companies ? metrics.total : null} />
-        <Metric icon={<Activity />} label="High-velocity accounts" value={companies ? metrics.high : null} accent="text-emerald-600" />
-        <Metric icon={<Gauge />} label="Average fit score" value={companies ? (metrics.avgFit ?? "—") : null} />
-        <Metric icon={<TimerReset />} label="Stale (> 7 days)" value={companies ? metrics.stale : null} accent={metrics.stale ? "text-amber-600" : undefined} />
-      </section>
-
-      {/* Not-yet-enriched banner */}
-      {companies && metrics.unenriched > 0 && !bulk && (
-        <div className="mt-4 flex flex-col items-start justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center">
-          <p className="text-sm">
-            <Sparkles className="mr-1.5 inline size-4 text-primary" />
-            {metrics.unenriched} account{metrics.unenriched > 1 ? "s have" : " has"} no intelligence yet.
-          </p>
-          <Button size="sm" onClick={() => refreshMany("stale")}>
-            Enrich {metrics.unenriched > 1 ? "them" : "it"} now
-          </Button>
-        </div>
-      )}
-
-      {/* Filters */}
-      <section className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative sm:max-w-xs sm:flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search company, language or tool" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <FilterSelect label="Filter by language" items={languageOptions} value={language} onChange={setLanguage} />
-          <FilterSelect label="Filter by cloud and services" items={stackOptions} value={stack} onChange={setStack} />
-          <FilterSelect label="Filter by velocity" items={VELOCITIES} value={velocity} onChange={setVelocity} />
-          <FilterSelect label="Filter by architecture or hiring" items={ARCHITECTURES} value={arch} onChange={setArch} />
-          <FilterSelect label="Sort accounts" items={SORTS} value={sort} onChange={(v) => setSort(v as SortKey)} />
-          {filtersActive && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuery("");
-                setStack("all");
-                setLanguage("all");
-                setVelocity("all");
-                setArch("all");
-              }}
+          {/* Pulse + mix */}
+          <section id="pulse" className="grid scroll-mt-24 gap-6 lg:grid-cols-3">
+            <Panel
+              className="lg:col-span-2"
+              title="Market pulse"
+              subtitle="What your watchlist shipped and said, week by week"
             >
-              Clear
-            </Button>
-          )}
+              {companies === null ? <Skeleton className="h-56 w-full rounded-xl" /> : <ActivityPulse weeks={pulse} />}
+            </Panel>
+            <Panel title="Stack mix" subtitle="Confirmed infrastructure signals across accounts">
+              {companies === null ? <Skeleton className="mx-auto size-44 rounded-full" /> : <StackMix {...mix} />}
+            </Panel>
+          </section>
+
+          {/* Feed + leaderboard */}
+          <div className="grid gap-6 lg:grid-cols-5">
+            <Panel
+              id="feed"
+              className="scroll-mt-24 lg:col-span-2"
+              title="Live feed"
+              subtitle="Across every account, newest first"
+              action={
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-brand">
+                  <span className="size-1.5 animate-pulse rounded-full bg-emerald-brand motion-reduce:animate-none" /> auto-updating
+                </span>
+              }
+            >
+              {companies === null ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="max-h-[420px] overflow-y-auto pr-1">
+                  <LiveFeed items={feedItems} onJump={jumpTo} />
+                </div>
+              )}
+            </Panel>
+            <Panel id="leaderboard" className="scroll-mt-24 lg:col-span-3" title="Leaderboard" subtitle="Ranked by fit — click a row to open the account">
+              {companies === null ? <Skeleton className="h-56 w-full rounded-xl" /> : <Leaderboard companies={companies} onJump={jumpTo} />}
+            </Panel>
+          </div>
+
+          {/* Accounts */}
+          <section id="accounts" className="scroll-mt-24 space-y-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="font-display text-2xl font-semibold tracking-tight">Accounts</h2>
+              <p className="text-sm text-muted-foreground">Filter by language, cloud & services, velocity or architecture.</p>
+            </div>
+            <div className="glass flex flex-col gap-2 rounded-2xl border p-3 shadow-soft sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="relative sm:w-64">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Search company, language or tool" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <FilterSelect label="Filter by language" items={languageOptions} value={language} onChange={setLanguage} />
+                <FilterSelect label="Filter by cloud and services" items={stackOptions} value={stack} onChange={setStack} />
+                <FilterSelect label="Filter by velocity" items={VELOCITIES} value={velocity} onChange={setVelocity} />
+                <FilterSelect label="Filter by architecture or hiring" items={ARCHITECTURES} value={arch} onChange={setArch} />
+                <FilterSelect label="Sort accounts" items={SORTS} value={sort} onChange={(v) => setSort(v as SortKey)} />
+                {filtersActive && (
+                  <Button variant="ghost" onClick={clearFilters}>
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {loadError && (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                Could not load the watchlist: {loadError}{" "}
+                <button className="underline" onClick={() => void load()}>
+                  Retry
+                </button>
+              </div>
+            )}
+            {companies === null ? (
+              <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            ) : companies.length === 0 ? (
+              <EmptyState onAdded={() => void load()} />
+            ) : visible.length === 0 ? (
+              <div className="rounded-2xl border border-dashed py-16 text-center text-sm text-muted-foreground">No accounts match these filters.</div>
+            ) : (
+              <div className="grid items-start gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                {visible.map((c) => (
+                  <CompanyCard
+                    key={c.id}
+                    company={c}
+                    refreshing={refreshing.has(c.id)}
+                    onRefresh={refreshOne}
+                    onRemove={remove}
+                    onIntelUpdate={updateIntel}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <footer className="border-t pt-4 pb-2 text-center text-xs text-muted-foreground">
+            <span className="font-display italic">Dora</span> · Tech Stack Scout — GitHub · job boards · Google News · Hacker News · company blogs ·
+            Gemini Flash · Supabase · weekly Vercel Cron
+          </footer>
         </div>
-      </section>
-
-      {/* Grid */}
-      <main className="mt-4">
-        {loadError && (
-          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            Could not load the watchlist: {loadError}{" "}
-            <button className="underline" onClick={() => void load()}>
-              Retry
-            </button>
-          </div>
-        )}
-        {companies === null ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        ) : companies.length === 0 ? (
-          <EmptyState onAdded={() => void load()} />
-        ) : visible.length === 0 ? (
-          <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">No accounts match these filters.</div>
-        ) : (
-          <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {visible.map((c) => (
-              <CompanyCard
-                key={c.id}
-                company={c}
-                refreshing={refreshing.has(c.id)}
-                onRefresh={refreshOne}
-                onRemove={remove}
-                onIntelUpdate={updateIntel}
-              />
-            ))}
-          </div>
-        )}
-      </main>
-
-      <footer className="mt-10 border-t pt-4 text-center text-xs text-muted-foreground">
-        Data: GitHub REST API · job boards (Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters) · company blogs · Google News · Hacker News · AI: Google Gemini Flash · Storage: Supabase · Auto-refresh weekly via Vercel Cron
-      </footer>
+      </div>
     </div>
+  );
+}
+
+/** Owns the 1s clock so only this badge re-renders every second, not the whole dashboard. */
+function SyncIndicator({ lastSync, syncing, onSync }: { lastSync: number | null; syncing: boolean; onSync: () => void }) {
+  const now = useNow(1000);
+  return (
+    <button
+      onClick={onSync}
+      className="group flex items-center gap-2 rounded-full border bg-card/70 px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      aria-label="Sync now"
+      title="Sync now"
+    >
+      <span className="relative flex size-2">
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-brand opacity-60 motion-reduce:hidden" />
+        <span className="relative inline-flex size-2 rounded-full bg-emerald-brand" />
+      </span>
+      <span className="font-semibold text-foreground">Live</span>
+      <span className="whitespace-nowrap tabular-nums">{syncing ? "syncing…" : `synced ${sinceLabel(lastSync, now)}`}</span>
+      <RotateCw className={cn("size-3 opacity-60 group-hover:opacity-100", syncing && "animate-spin")} />
+    </button>
+  );
+}
+
+function Panel({
+  id,
+  title,
+  subtitle,
+  action,
+  className,
+  children,
+}: {
+  id?: string;
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} className={cn("rounded-2xl border bg-card p-5 shadow-soft", className)}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">{title}</h2>
+          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -405,23 +631,9 @@ function FilterSelect({
   );
 }
 
-function Metric({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: number | string | null; accent?: string }) {
-  return (
-    <Card className="gap-0 py-3">
-      <CardContent className="flex items-center gap-3 px-4">
-        <div className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground [&_svg]:size-4">{icon}</div>
-        <div>
-          {value === null ? <Skeleton className="mb-1 h-6 w-10" /> : <div className={`text-2xl font-semibold tabular-nums ${accent ?? ""}`}>{value}</div>}
-          <div className="text-xs text-muted-foreground">{label}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function SkeletonCard() {
   return (
-    <Card className="gap-0 py-0">
+    <Card className="gap-0 rounded-2xl py-0 shadow-soft">
       <CardHeader className="gap-2 border-b px-4 py-3.5">
         <div className="flex justify-between">
           <div className="space-y-2">
@@ -447,7 +659,7 @@ function SkeletonCard() {
 
 function EmptyState({ onAdded }: { onAdded: () => void }) {
   return (
-    <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-20 text-center">
+    <div className="glass flex flex-col items-center gap-4 rounded-2xl border border-dashed px-6 py-20 text-center">
       <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
         <Radar className="size-7 text-muted-foreground" />
       </div>

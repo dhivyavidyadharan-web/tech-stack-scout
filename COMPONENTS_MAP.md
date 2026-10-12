@@ -1,4 +1,4 @@
-# Tech Stack Scout — Components Map
+# Dora · Tech Stack Scout — Components Map
 
 How Next.js, Supabase, the GitHub REST API, Google Gemini Flash and Vercel Cron fit together.
 
@@ -105,7 +105,11 @@ Failure handling:
 | Component | File | Responsibility |
 |---|---|---|
 | `RootLayout` | `src/app/layout.tsx` | Fonts, `ThemeProvider` (dark mode), `TooltipProvider`, `Toaster` |
-| `Dashboard` | `src/components/dashboard.tsx` | Data loading, metrics, filters/sort, bulk refresh with progress, empty/skeleton states |
+| `Dashboard` | `src/components/dashboard.tsx` | Data loading + 60s live sync, stat tiles, charts, feed, leaderboard, filters/sort, bulk refresh, empty/skeleton states |
+| `Sidebar` | `src/components/sidebar.tsx` | Dora brand, section nav with scroll-tracked active state, CSV export |
+| `StatTiles` | `src/components/stat-tiles.tsx` | Gradient KPI tiles with count-up numbers and mini bar charts |
+| `ActivityPulse` / `StackMix` | `src/components/charts/*` | Weekly activity area chart (crosshair tooltip); infra donut with value table |
+| `LiveFeed` / `Ticker` / `Leaderboard` | `src/components/*` | Cross-account timeline with "fresh" highlights; headline marquee; fit-ranked table that jumps to cards |
 | `StatusStrip` | `src/components/status-strip.tsx` | Live integration health and remaining GitHub quota |
 | `AddCompanyDialog` | `src/components/add-company-dialog.tsx` | Validated add flow with suggestions; enriches straight after adding |
 | `ActivityFeed` | `src/components/activity-feed.tsx` | Merges news, HN, releases, new repos and blog posts into one timeline; "Building now" picks the best item of each kind |

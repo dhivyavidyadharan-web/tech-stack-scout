@@ -28,6 +28,15 @@ const LABEL = {
   blog: "Blog",
 } as const;
 
+const VERSION = /v?\d+\.\d+(?:\.\d+)?(?:[-.][\w.]+)?/;
+
+/** "cli v3.0.0", plus the release's own title only when it says more than the version. */
+function releaseTitle(repo: string, tag: string, name: string): string {
+  const version = tag.match(VERSION)?.[0] ?? tag;
+  const extra = name && !(name.match(VERSION)?.[0] === version || name === tag) ? ` — ${name}` : "";
+  return `${repo} ${version}${extra}`;
+}
+
 /** Merge every "what are they doing now" source into one dated timeline. */
 export function activityFrom(intel: EngineeringIntelligence): ActivityItem[] {
   const building = "releases" in intel.building ? intel.building : { releases: [], newRepos: [] };
@@ -41,7 +50,7 @@ export function activityFrom(intel: EngineeringIntelligence): ActivityItem[] {
     })),
     ...building.releases.map((r) => ({
       kind: "release" as const,
-      title: `${r.repo} ${r.tag}${r.name !== r.tag ? ` — ${r.name}` : ""}`,
+      title: releaseTitle(r.repo, r.tag, r.name),
       url: r.url,
       meta: "GitHub release",
       date: r.published,

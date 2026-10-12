@@ -47,7 +47,7 @@ export async function GET() {
     return new Response(`﻿${csv}`, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="tech-stack-scout-${date}.csv"`,
+        "Content-Disposition": `attachment; filename="dora-watchlist-${date}.csv"`,
       },
     });
   } catch (err) {
