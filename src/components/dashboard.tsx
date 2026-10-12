@@ -114,8 +114,12 @@ export function Dashboard() {
     cancelBulk.current = false;
     setBulk({ done: 0, total: targets.length });
     let ok = 0;
+    let stopped = false;
     for (const [i, c] of targets.entries()) {
-      if (cancelBulk.current) break;
+      if (cancelBulk.current) {
+        stopped = true;
+        break;
+      }
       const keepGoing = await enrichOne(c.id, true);
       if (keepGoing) ok++;
       setBulk({ done: i + 1, total: targets.length });
@@ -123,7 +127,9 @@ export function Dashboard() {
       if (!keepGoing) break;
     }
     setBulk(null);
-    toast.success(`Refreshed ${ok} of ${targets.length} accounts`);
+    const noun = targets.length === 1 ? "account" : "accounts";
+    if (stopped) toast.info(`Stopped — refreshed ${ok} of ${targets.length} ${noun}`);
+    else toast.success(`Refreshed ${ok} of ${targets.length} ${noun}`);
   }
 
   const remove = useCallback(async (id: string) => {
@@ -284,10 +290,10 @@ export function Dashboard() {
           <Input placeholder="Search company, handle or language" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
         </div>
         <div className="flex flex-wrap gap-2">
-          <FilterSelect items={stackOptions} value={stack} onChange={setStack} />
-          <FilterSelect items={VELOCITIES} value={velocity} onChange={setVelocity} />
-          <FilterSelect items={ARCHITECTURES} value={arch} onChange={setArch} />
-          <FilterSelect items={SORTS} value={sort} onChange={(v) => setSort(v as SortKey)} />
+          <FilterSelect label="Filter by cloud stack" items={stackOptions} value={stack} onChange={setStack} />
+          <FilterSelect label="Filter by velocity" items={VELOCITIES} value={velocity} onChange={setVelocity} />
+          <FilterSelect label="Filter by architecture or hiring" items={ARCHITECTURES} value={arch} onChange={setArch} />
+          <FilterSelect label="Sort accounts" items={SORTS} value={sort} onChange={(v) => setSort(v as SortKey)} />
           {filtersActive && (
             <Button
               variant="ghost"
@@ -348,17 +354,19 @@ export function Dashboard() {
 }
 
 function FilterSelect({
+  label,
   items,
   value,
   onChange,
 }: {
+  label: string;
   items: { value: string; label: string }[];
   value: string;
   onChange: (v: string) => void;
 }) {
   return (
     <Select items={items} value={value} onValueChange={(v) => onChange((v as string | null) ?? "all")}>
-      <SelectTrigger className="min-w-36">
+      <SelectTrigger className="min-w-36" aria-label={label}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

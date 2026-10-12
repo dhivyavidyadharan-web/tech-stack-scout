@@ -5,7 +5,7 @@ import { regeneratePitch } from "@/lib/gemini";
 import { db } from "@/lib/supabase";
 import type { EngineeringIntelligence, PitchTone, RawStats } from "@/lib/types";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const bodySchema = z.object({
   tone: z.enum(["technical", "executive", "casual"]),
@@ -40,7 +40,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/pitch/[comp
     const { pitch } = await regeneratePitch(intel.raw_stats as RawStats, intel.velocity_score, tone, avoid);
 
     const update: Partial<EngineeringIntelligence> = {
-      pitch_variants: { ...intel.pitch_variants, [tone]: pitch },
+      pitch_variants: { ...intel.pitch_variants, [tone]: pitch, ...(parsed.data.makePrimary ? { angle: undefined } : {}) },
       ...(parsed.data.makePrimary ? { outreach_pitch: pitch } : {}),
     };
     const { data: saved, error: saveError } = await supabase

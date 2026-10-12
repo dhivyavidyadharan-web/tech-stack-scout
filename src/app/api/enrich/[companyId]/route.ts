@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, getCompany, handleError } from "@/lib/api";
 import { enrichCompany, recordRefreshError } from "@/lib/enrichment";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/enrich/[companyId]

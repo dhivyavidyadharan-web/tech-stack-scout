@@ -93,7 +93,9 @@ async function loadBoard(provider: Provider, token: string): Promise<{ jobs: Raw
 }
 
 const ENG_ROLE = /\b(engineer|engineering|developer|sre|devops|platform|infrastructure|architect|security|data|machine learning|ml|software|backend|frontend|full[- ]?stack)\b/i;
-const NON_ENG_ROLE = /\b(sales|solutions?|account|customer|support|success|recruit|talent|marketing|partner|legal|finance|people|developer advocate|developer relations|devrel|design engineer)\b/i;
+// Titles that mention "platform"/"data"/etc. but aren't engineering seats.
+const NON_ENG_ROLE =
+  /\b(sales|solutions?|account|customer|support|success|recruit(er|ing)?|talent|marketing|partner(ships)?|legal|counsel|finance|people|developer advocate|developer relations|devrel|design engineer|product manager|program manager|project manager|product marketing|product designer|designer|technical writer|business|operations manager|chief of staff)\b/i;
 
 /** Tools & languages worth surfacing from job descriptions. Names align with infra-detection where possible. */
 const JOB_KEYWORDS: { name: string; re: RegExp }[] = [
@@ -228,16 +230,20 @@ export async function fetchBlogPosts(company: Company): Promise<{ posts: BlogPos
   const origin = `https://${company.domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
   const candidates = new Set<string>();
 
-  // 1. HTML autodiscovery on the homepage and /blog.
-  for (const page of [origin, `${origin}/blog`]) {
-    const res = await fetchWithTimeout(page, { headers: { Accept: "text/html" } });
-    if (!res?.ok) continue;
-    const html = (await res.text()).slice(0, 200_000);
+  // 1. HTML autodiscovery on the homepage and /blog (fetched in parallel).
+  const pages = [origin, `${origin}/blog`];
+  const htmls = await Promise.all(
+    pages.map(async (page) => {
+      const res = await fetchWithTimeout(page, { headers: { Accept: "text/html" } });
+      return res?.ok ? (await res.text()).slice(0, 200_000) : "";
+    }),
+  );
+  htmls.forEach((html, i) => {
     for (const m of html.matchAll(/<link[^>]+type="application\/(?:rss|atom)\+xml"[^>]*>/gi)) {
       const href = m[0].match(/href="([^"]+)"/i)?.[1];
-      if (href) candidates.add(new URL(decodeEntities(href), page).toString());
+      if (href) candidates.add(new URL(decodeEntities(href), pages[i]).toString());
     }
-  }
+  });
   // 2. Common feed paths (blog first), plus a blog. subdomain.
   for (const p of FEED_PATHS) candidates.add(`${origin}${p}`);
   candidates.add(`https://blog.${company.domain.replace(/^www\./, "")}/feed/`);

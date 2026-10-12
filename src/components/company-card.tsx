@@ -465,6 +465,11 @@ function OutreachHook({
           </Tooltip>
         </span>
       </blockquote>
+      {tone === "primary" && intel.pitch_variants.angle && (
+        <p className="text-[11px] text-muted-foreground">
+          Built on their <span className="font-medium">{intel.pitch_variants.angle.replace(/-/g, " ")}</span> signal
+        </p>
+      )}
     </section>
   );
 }

@@ -108,13 +108,35 @@ export function buildBrief(c: CompanyWithIntel): string {
   ].join("\n");
 }
 
+/** Legacy copy path for contexts where the async Clipboard API is blocked (embedded views, http). */
+function legacyCopy(text: string): boolean {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    area.remove();
+  }
+}
+
 export async function copyText(text: string, label = "Copied to clipboard") {
   try {
     await navigator.clipboard.writeText(text);
     toast.success(label);
     return true;
   } catch {
-    toast.error("Clipboard unavailable", { description: "Your browser blocked clipboard access." });
+    if (legacyCopy(text)) {
+      toast.success(label);
+      return true;
+    }
+    toast.error("Clipboard unavailable", { description: "Your browser blocked clipboard access — select the text and copy manually." });
     return false;
   }
 }

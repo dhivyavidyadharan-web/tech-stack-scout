@@ -34,7 +34,10 @@ export interface FitReason {
 }
 
 export type PitchTone = "technical" | "executive" | "casual";
-export type PitchVariants = Partial<Record<PitchTone, string>>;
+export type PitchVariants = Partial<Record<PitchTone, string>> & {
+  /** Which concrete fact the primary hook is built on, e.g. "hiring". */
+  angle?: string;
+};
 
 export interface TopRepo {
   name: string;

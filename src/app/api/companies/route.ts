@@ -6,7 +6,7 @@ import { GitHubError, resolveOwner } from "@/lib/github";
 import { db } from "@/lib/supabase";
 import type { Company } from "@/lib/types";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /** GET /api/companies — watchlist with latest intelligence and snapshot history. */
 export async function GET() {

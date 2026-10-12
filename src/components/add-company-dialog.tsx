@@ -46,6 +46,11 @@ export function AddCompanyDialog({ existingOrgs, onAdded }: Props) {
       setError("Enter a GitHub organization handle.");
       return;
     }
+    const handle = org.trim().replace(/^@/, "").replace(/^https?:\/\/github\.com\//i, "").split("/")[0].toLowerCase();
+    if (existingOrgs.includes(handle)) {
+      setError(`@${handle} is already on your watchlist.`);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     const toastId = toast.loading(`Scouting @${org.trim()}…`, {
@@ -107,16 +112,24 @@ export function AddCompanyDialog({ existingOrgs, onAdded }: Props) {
 
           <div className="grid gap-2">
             <Label htmlFor="org">GitHub organization *</Label>
-            <div className="flex items-center rounded-lg border border-input focus-within:ring-3 focus-within:ring-ring/50">
+            <div
+              className={`flex items-center rounded-lg border focus-within:ring-3 focus-within:ring-ring/50 ${
+                error ? "border-destructive" : "border-input"
+              }`}
+            >
               <span className="pl-2.5 text-sm text-muted-foreground">github.com/</span>
               <Input
                 id="org"
                 autoFocus
                 placeholder="vercel"
                 value={org}
-                onChange={(e) => setOrg(e.target.value)}
-                className="border-0 pl-0.5 shadow-none focus-visible:ring-0"
+                onChange={(e) => {
+                  setOrg(e.target.value);
+                  setError(null);
+                }}
+                className="border-0 pl-0.5 shadow-none focus-visible:ring-0 aria-invalid:ring-0"
                 aria-invalid={Boolean(error)}
+                aria-describedby={error ? "org-error" : undefined}
                 disabled={submitting}
               />
             </div>
@@ -127,7 +140,10 @@ export function AddCompanyDialog({ existingOrgs, onAdded }: Props) {
                   <button
                     key={s}
                     type="button"
-                    onClick={() => setOrg(s)}
+                    onClick={() => {
+                      setOrg(s);
+                      setError(null);
+                    }}
                     className="rounded-md border px-1.5 py-0.5 font-mono hover:bg-muted"
                     disabled={submitting}
                   >
@@ -149,7 +165,11 @@ export function AddCompanyDialog({ existingOrgs, onAdded }: Props) {
             </div>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p id="org-error" role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
 
           <DialogFooter>
             <Button type="submit" disabled={submitting}>
