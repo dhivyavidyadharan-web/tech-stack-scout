@@ -1,29 +1,5 @@
 # Dora · Tech Stack Scout — Components Map
 
-![Dora components map](docs/components-map.png)
-
-*Vector version: [docs/components-map.svg](docs/components-map.svg)*
-
-## How to read it (the 30-second viva walkthrough)
-
-| # | Step | Lane → column | What happens |
-|---|---|---|---|
-| 1 | **Trigger** | Nikhil → Trigger | Nikhil adds a company by its GitHub org, or clicks *Refresh Intelligence*. |
-| 2 | **Input** | Dora App → Input | The app checks the org exists on GitHub, applies the same-site check and rate limit, and saves it to the watchlist in Supabase. |
-| 3 | **Context** | Supabase · GitHub · Jobs/News/Blogs → Context | Live data is collected: 30 latest public repos (languages, commits, file trees, `package.json`, releases), 6 job boards, Google News, Hacker News and the company blog. |
-| 4 | **Processing** | Dora App → Processing | **Code, not AI**: language shares, infrastructure detected from real files, public velocity, the engineering-complexity score and linked buying signals. |
-| 5 | **AI** | Gemini Flash → AI | Gemini drops wrong-company news, then writes the overview, the 2-paragraph summary, *why it may matter* and the opener, as strict JSON. |
-| 6 | **Validate** | Dora App → AI | The app validates the JSON with zod (one retry, template fallback if needed) and saves the result to Supabase. |
-| 7 | **Output** | Nikhil → Output | Account cards: stack, buying signals, evidence links and an opener to copy into email or CRM. |
-| 8 | **Schedule** | Vercel Cron → Trigger | Weekly (Sun 00:00 UTC) it re-researches stale accounts; daily it enriches newly added rows. Both feed the same pipeline. |
-| 9 | **Review gate** | Nikhil → Output | Nikhil checks the evidence links and the Observed vs Hypothesis tags, edits the opener and sends it himself. |
-
-**Scope cut:** no CRM deal pipeline, no email sending, no private-repo access, no personal contact data, no user accounts.
-
----
-
-## Detailed architecture
-
 How Next.js, Supabase, the GitHub REST API, Google Gemini Flash and Vercel Cron fit together.
 
 ## 1. System architecture
