@@ -14,8 +14,8 @@ export async function GET() {
   try {
     const rows = await loadWatchlist();
     const header = [
-      "Company", "Domain", "GitHub", "Fit Score", "Velocity", "Active Repos (30d)", "Commits (30d)",
-      "Last Commit", "Top Languages", "Infrastructure (confirmed)", "Microservices", "Open Eng Roles", "Tools in Job Posts", "Latest Blog Post", "Outreach Hook", "Engineering Summary", "Last Refreshed",
+      "Company", "Domain", "GitHub", "Overview", "Fit Score", "Velocity", "Active Repos (30d)", "Commits (30d)",
+      "Last Commit", "Top Languages", "Infrastructure (confirmed)", "Microservices", "Open Eng Roles", "Tools in Job Posts", "Latest News", "Latest Release", "Latest Blog Post", "Outreach Hook", "Engineering Summary", "Last Refreshed",
     ];
     const lines = rows.map((c) => {
       const i = c.intelligence;
@@ -23,6 +23,7 @@ export async function GET() {
         c.name,
         c.domain,
         `https://github.com/${c.github_org}`,
+        i?.overview,
         i?.fit_score,
         i?.velocity_score,
         i?.active_repo_count,
@@ -33,6 +34,8 @@ export async function GET() {
         i && "microservices" in i.architecture ? i.architecture.microservices : "",
         i?.hiring_signals?.engineeringRoles,
         i?.hiring_signals?.tools.map((t) => `${t.name} (${t.count})`).join("; "),
+        i?.news?.find((n) => n.kind === "news")?.title,
+        i && "releases" in i.building ? i.building.releases[0] && `${i.building.releases[0].repo} ${i.building.releases[0].tag}` : "",
         i?.blog_posts?.[0]?.title,
         i?.outreach_pitch,
         i?.engineering_summary?.replace(/\n\n/g, " ¶ "),

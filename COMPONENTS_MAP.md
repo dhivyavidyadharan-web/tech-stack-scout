@@ -36,8 +36,11 @@ How Next.js, Supabase, the GitHub REST API, Google Gemini Flash and Vercel Cron 
 │               │                 ┌──────────────────────────────────────────┐     │
 │               │                 │ 1 collectOrgStats()      lib/github.ts   │─────┼──▶ GitHub REST API
 │               │                 │   repos · languages · commits · git tree │     │   api.github.com
-│               │                 │ 1b fetchHiringSignals()   lib/signals.ts │─────┼──▶ Greenhouse / Lever / Ashby
+│               │                 │ 1b fetchHiringSignals()   lib/signals.ts │─────┼──▶ Greenhouse · Lever · Ashby · Workable
+│               │                 │                                          │     │    · Recruitee · SmartRecruiters
 │               │                 │ 1c fetchBlogPosts()       lib/signals.ts │─────┼──▶ Company RSS / Atom feeds
+│               │                 │ 1d fetchNews()            lib/signals.ts │─────┼──▶ Google News RSS · Hacker News (Algolia)
+│               │                 │ 1e filterRelevantNews()   lib/gemini.ts  │─────┼──▶ Gemini Flash (namesake filter)
 │               │                 │ 2 detectInfra() + detectArchitecture()   │     │
 │               │                 │ 3 velocityFrom() + fitScore() lib/scoring│     │
 │               │                 │ 4 generateNarrative()    lib/gemini.ts   │─────┼──▶ Google Gemini Flash
@@ -72,12 +75,14 @@ Client          Route handler        GitHub API                 Gemini Flash    
   │                  │ GET /repos/{r}/commits?since=30d ×6          │                   │
   │                  │ GET /repos/{r}/git/trees/{branch}?recursive=1 ×6                 │
   │                  │ GET /repos/{r}/contents/package.json (if present)                │
-  │                  │ ∥ Greenhouse/Ashby/Lever job board API · RSS/Atom feed (parallel, best-effort)
+  │                  │ GET /repos/{r}/releases (active repos) · new repos from created_at
+  │                  │ ∥ 6 job-board APIs · RSS/Atom feed · Google News · HN (parallel, best-effort)
+  │                  │ Gemini: keep only headlines about THIS company ─────────────▶│
   │                  │ detectArchitecture (Dockerfiles · services/ · .proto · k8s) + job mentions
   │                  │◀──────────────────│                          │                   │
   │                  │ detectInfra · velocity · fitScore            │                   │
   │                  │ generateContent(JSON schema) ───────────────▶│                   │
-  │                  │◀──── {paragraph_1, paragraph_2, pitch, 3 tone variants}          │
+  │                  │◀──── {overview, paragraph_1, paragraph_2, pitch, 3 tones, hook_angle}
   │                  │ cache discovered jobs_board / blog_feed_url on companies ───────▶│
   │                  │ upsert engineering_intelligence ─────────────┼──────────────────▶│
   │                  │ insert intelligence_snapshots ───────────────┼──────────────────▶│
@@ -103,7 +108,8 @@ Failure handling:
 | `Dashboard` | `src/components/dashboard.tsx` | Data loading, metrics, filters/sort, bulk refresh with progress, empty/skeleton states |
 | `StatusStrip` | `src/components/status-strip.tsx` | Live integration health and remaining GitHub quota |
 | `AddCompanyDialog` | `src/components/add-company-dialog.tsx` | Validated add flow with suggestions; enriches straight after adding |
-| `CompanyCard` | `src/components/company-card.tsx` | Stack badges with evidence tooltips, velocity tag, microservices badge, hiring signals, blog posts, fit ring, outreach hook (tones, copy, regenerate), accordions, refresh/remove actions |
+| `ActivityFeed` | `src/components/activity-feed.tsx` | Merges news, HN, releases, new repos and blog posts into one timeline; "Building now" picks the best item of each kind |
+| `CompanyCard` | `src/components/company-card.tsx` | Overview TL;DR, "Building now", stack badges with evidence tooltips, velocity tag, microservices badge, hiring signals and matching JDs, fit ring, outreach hook (tones, copy, regenerate), accordions, refresh/remove actions |
 | `HistoryPanel` | `src/components/history-panel.tsx` | Fit-score sparkline and diffs between snapshots ("Adopted Kubernetes", "Velocity Moderate → High", "Engineering hiring 12 → 20") |
 | `ui/*` | `src/components/ui` | shadcn/ui (Base UI primitives) |
 
@@ -133,7 +139,8 @@ created_at   timestamptz     │    active_repo_count   int                   �
 - **Gemini only sees aggregates.** It gets public GitHub facts. Signals that were only "mentioned" are labelled that way, so the model hedges instead of inventing.
 - **Evidence-backed tags.** Each infra tag stores the file that proved it (`terraform-provider-aws: …/main.tf`). The UI separates *confirmed* tags (found in files) from *mentioned* ones (dashed outline), so an AE never pitches a tool the prospect doesn't actually use.
 - **Noise filtering.** Docs, example and starter repos are deprioritised, and prose "languages" (MDX, Markdown) are excluded. Without this, `prisma` reads as "60% MDX" and gets an AWS tag from its examples gallery.
-- **Three live sources, like a human researcher.** GitHub shows how they build, job posts show what they hire for, and the blog shows what they're shipping. Tools named in job descriptions become *confirmed* infra tags with "Jobs (greenhouse): mentioned in N postings" as the evidence.
+- **"What are they building now" beats static stack facts.** Hook angles are ranked news → release → new repo → hiring → blog → architecture, so the opener references something current.
+- **Several live sources, like a human researcher.** GitHub shows how they build, job posts show what they hire for, and the blog shows what they're shipping. Tools named in job descriptions become *confirmed* infra tags with "Jobs (greenhouse): mentioned in N postings" as the evidence.
 - **Microservices from structure, not keywords.** Many Dockerfiles in separate directories, deployable roots under `services/`, `.proto` contracts and Kubernetes manifests count as strong signals. A compose file alone is weak.
 - **No code needed to manage the watchlist.** Rows added in the Supabase table editor are picked up by the daily `?mode=new` cron. The `jobs_board` and `blog_feed_url` columns can be overridden by hand.
 - **The fit score is explainable.** Eight weighted, capped factors (100 points total). Each reason is a sentence the AE can repeat on a call.

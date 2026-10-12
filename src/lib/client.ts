@@ -91,11 +91,13 @@ export function buildBrief(c: CompanyWithIntel): string {
   return [
     `ACCOUNT BRIEF: ${c.name}${c.domain ? ` (${c.domain})` : ""}`,
     `GitHub: https://github.com/${c.github_org}`,
+    ...(i.overview ? [``, i.overview, ``] : []),
     `Fit score: ${i.fit_score ?? "n/a"}/100 · Velocity: ${i.velocity_score ?? "n/a"} · ${i.active_repo_count} active repos · ${i.commits_30d ?? 0} commits (30d)`,
     `Languages: ${langs}`,
     `Infrastructure: ${infra}`,
     `Microservices: ${"microservices" in i.architecture ? i.architecture.microservices : "n/a"}`,
     `Hiring: ${i.hiring_signals ? `${i.hiring_signals.engineeringRoles} open engineering roles (${i.hiring_signals.tools.slice(0, 5).map((t) => t.name).join(", ")})` : "no public job board"}`,
+    ...(i.news?.find((n) => n.kind === "news") ? [`In the news: ${i.news.find((n) => n.kind === "news")!.title}`] : []),
     ...(i.blog_posts?.[0] ? [`Latest post: ${i.blog_posts[0].title}`] : []),
     ``,
     `ENGINEERING CONTEXT`,

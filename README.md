@@ -8,8 +8,10 @@ A sales intelligence dashboard for enterprise Account Executives who sell develo
 - **A two-paragraph engineering summary**, written by **Google Gemini Flash**
 - **A tailored outreach opener**, plus technical, executive and casual versions you can regenerate and copy in one click
 - **Microservices detection**: structural evidence (multiple Dockerfiles, deployable `services/` roots, Protobuf/gRPC contracts, Kubernetes manifests) plus job-post mentions
-- **Hiring signals** from live public job boards (Greenhouse, Lever, Ashby): open engineering roles and the tools named in job descriptions
-- **Recent engineering blog posts**, autodiscovered from each company's RSS or Atom feed
+- **Hiring signals** from live public job boards (Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters): open engineering roles, the tools named in job descriptions, and links to the **matching job posts** worth reading before a call
+- **"Building now"**: what the company is shipping *this month*, from **Google News**, **Hacker News**, **GitHub releases**, **newly created repos** and the company's **engineering blog** (RSS or Atom)
+- **A 1–2 sentence overview** on every card, with the full two-paragraph Gemini summary one click away
+- **Filters by language and by cloud/services**, plus velocity, microservices/hiring, and full-text search across companies, languages and tools
 - **A fit score (0–100)** with a plain-language breakdown, a **change history** between refreshes, **CSV export** and a one-click **account brief**
 
 Built with Next.js 16 (App Router, TypeScript, Tailwind v4, shadcn/ui), Supabase Postgres, the GitHub REST API, Gemini Flash and Vercel Cron.
@@ -32,7 +34,8 @@ Create a Supabase project, then run these two files in the **SQL Editor** in thi
 
 1. [`supabase/migrations/20261012000000_init_tech_stack_scout.sql`](supabase/migrations/20261012000000_init_tech_stack_scout.sql) creates the tables, indexes, RLS and the `stale_companies` view.
 2. [`supabase/migrations/20261012010000_hiring_blog_architecture.sql`](supabase/migrations/20261012010000_hiring_blog_architecture.sql) adds the job-board, blog and architecture columns.
-3. [`supabase/seed.sql`](supabase/seed.sql) adds five seed accounts: Supabase, Vercel, Postman, HashiCorp and Prisma.
+3. [`supabase/migrations/20261012020000_news_activity_overview.sql`](supabase/migrations/20261012020000_news_activity_overview.sql) adds the news, releases, overview and `news_query` columns.
+4. [`supabase/seed.sql`](supabase/seed.sql) adds five seed accounts: Supabase, Vercel, Postman, HashiCorp and Prisma.
 
 The seed accounts start without intelligence. Click **"Enrich them now"** on the dashboard and they'll be scanned live.
 
@@ -59,8 +62,9 @@ Nikhil can manage everything from the **Supabase Table Editor → `companies`**:
 |---|---|
 | Add a company | Insert a row with `name` and `github_org` (lowercase). The daily cron enriches it within 24 hours, or click **Enrich now** on the dashboard. |
 | Remove a company | Delete the row. Its intelligence and history are deleted with it. |
-| Fix a job board | Set `jobs_board` to `greenhouse:<token>`, `lever:<token>` or `ashby:<token>`, or `none` to disable it. |
+| Fix a job board | Set `jobs_board` to `greenhouse:`, `lever:`, `ashby:`, `workable:`, `recruitee:` or `smartrecruiters:` followed by the board id, or `none` to disable it. |
 | Fix a blog feed | Set `blog_feed_url` to an RSS or Atom URL, or `none` to disable it. |
+| Fix news for an ambiguous name | Set `news_query`, e.g. `"Prisma" (ORM OR database)`, or `none` to disable it. |
 
 Discovered job boards and feeds are cached in those two columns. A source that stops responding is cleared and rediscovered on the next refresh.
 
@@ -119,6 +123,26 @@ Errors always come back as `{ error, code, resetAt? }`. `code` is one of `GITHUB
 
 ---
 
+## Data sources: what we use and why
+
+Tech Stack Scout automates the three research tasks an AE currently does by hand.
+
+| Manual task | Source used | Why this one | Considered and rejected |
+|---|---|---|---|
+| Reading public code repositories | **GitHub REST API**: repos, languages, commits, recursive file trees, `package.json`, releases | The ground truth of how a team builds, with file-level evidence for every tag | GitLab and Bitbucket (most target accounts publish on GitHub; easy to add later) |
+| Reading job descriptions | **Greenhouse, Lever, Ashby, Workable, Recruitee** public job APIs, plus **SmartRecruiters** via override | Free and keyless; together they cover most tech-company careers pages. Guessed Workable accounts are name-checked against the company. | **LinkedIn / Indeed**: no public jobs API, and scraping breaks their terms |
+| Engineering blogs and "what are they building" | Company **RSS/Atom** feed (autodiscovered), **Google News RSS**, **Hacker News (Algolia API)** | All free and keyless. News covers launches, funding and M&A; HN shows which posts engineers actually discuss. | **Reddit**: API needs OAuth approval, and commercial use needs a paid agreement. **Quora**: no API, and scraping breaks its terms. |
+
+**News quality controls.** Common-word names ("Postman", "Prisma") produce lots of namesake headlines, so news goes through four filters:
+1. The search adds tech and business context.
+2. The company name must appear in the headline as a proper noun (case-sensitive).
+3. Tutorials, "X vs Y" pieces and SEO listicles are dropped.
+4. A temperature-0 Gemini Flash call keeps only headlines about *this* company.
+
+You can override the search per company with `news_query` in Supabase.
+
+**People.** Proper contact data (title, email) needs a paid provider such as Apollo or People Data Labs. The free, public option is the top contributors on a company's main GitHub repos (handle and profile only). Neither is enabled yet.
+
 ## How the intelligence is computed
 
 | Signal | Method |
@@ -143,12 +167,12 @@ src/
 │  ├─ api/            companies · enrich · cron/refresh · pitch · export · health
 │  ├─ layout.tsx      theme, tooltips, toasts
 │  └─ page.tsx        renders <Dashboard/>
-├─ components/        dashboard, company-card, add-company-dialog, history-panel, status-strip, ui/*
+├─ components/        dashboard, company-card, activity-feed, add-company-dialog, history-panel, status-strip, ui/*
 ├─ lib/
 │  ├─ github.ts           live GitHub collection (rate-limit aware, bounded concurrency)
 │  ├─ infra-detection.ts  pure rule engine → tags with evidence
 │  ├─ scoring.ts          velocity + explainable fit score
-│  ├─ signals.ts          live job boards (Greenhouse/Lever/Ashby) + blog feed discovery
+│  ├─ signals.ts          job boards (6 providers) · blog feed discovery · Google News · Hacker News
 │  ├─ gemini.ts           Gemini Flash narrative, pitch regeneration, template fallback
 │  ├─ enrichment.ts       the pipeline: collect → score → narrate → upsert + snapshot
 │  ├─ api.ts / client.ts  server and client helpers

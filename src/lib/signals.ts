@@ -1,11 +1,13 @@
 import "server-only";
-import type { BlogPost, Company, HiringSignals } from "./types";
+import type { BlogPost, Company, HiringSignals, JobPosting, NewsItem } from "./types";
 
 /**
- * Two extra live sources beyond GitHub, mirroring how an AE researches manually:
- *  1. Public job postings (Greenhouse / Lever / Ashby) — what tools they hire for.
+ * Live sources beyond GitHub, mirroring how an AE researches manually:
+ *  1. Public job postings (Greenhouse / Lever / Ashby / Workable / Recruitee / SmartRecruiters)
+ *     — what tools they hire for, plus the specific JDs worth reading.
  *  2. The company's engineering blog / changelog feed — what they're shipping and talking about.
- * Both are best-effort: any failure returns null/[] and never breaks enrichment.
+ *  3. Google News + Hacker News — what they're building *now* and what engineers are discussing.
+ * All are best-effort: any failure returns null/[] and never breaks enrichment.
  */
 
 const TIMEOUT_MS = 6_000;
@@ -47,49 +49,109 @@ interface RawJob {
   title: string;
   department: string;
   text: string;
+  url: string | null;
 }
 
 type Provider = HiringSignals["provider"];
+const PROVIDERS: Provider[] = ["greenhouse", "ashby", "lever", "workable", "recruitee", "smartrecruiters"];
 
-async function loadBoard(provider: Provider, token: string): Promise<{ jobs: RawJob[]; boardUrl: string } | null> {
-  if (provider === "greenhouse") {
-    const data = await getJson<{
-      jobs: { title: string; content?: string; departments?: { name: string }[] }[];
-    }>(`https://boards-api.greenhouse.io/v1/boards/${token}/jobs?content=true`);
-    if (!Array.isArray(data?.jobs)) return null; // an existing board with 0 openings is still a real signal
-    return {
-      boardUrl: `https://job-boards.greenhouse.io/${token}`,
-      jobs: data.jobs.map((j) => ({
-        title: j.title,
-        department: j.departments?.map((d) => d.name).join(" ") ?? "",
-        // Greenhouse returns HTML-escaped HTML.
-        text: stripHtml(decodeEntities(j.content ?? "")),
-      })),
-    };
+/**
+ * Public, key-free job-board APIs. Each returns null when the board doesn't exist,
+ * and an empty list for a real board with no openings (still a useful signal).
+ */
+async function loadBoard(
+  provider: Provider,
+  token: string,
+  companyName?: string,
+): Promise<{ jobs: RawJob[]; boardUrl: string } | null> {
+  switch (provider) {
+    case "greenhouse": {
+      const data = await getJson<{
+        jobs: { title: string; absolute_url?: string; content?: string; departments?: { name: string }[] }[];
+      }>(`https://boards-api.greenhouse.io/v1/boards/${token}/jobs?content=true`);
+      if (!Array.isArray(data?.jobs)) return null;
+      return {
+        boardUrl: `https://job-boards.greenhouse.io/${token}`,
+        jobs: data.jobs.map((j) => ({
+          title: j.title,
+          department: j.departments?.map((d) => d.name).join(" ") ?? "",
+          // Greenhouse returns HTML-escaped HTML.
+          text: stripHtml(decodeEntities(j.content ?? "")),
+          url: j.absolute_url ?? null,
+        })),
+      };
+    }
+    case "lever": {
+      const data = await getJson<
+        { text: string; hostedUrl?: string; categories?: { team?: string; department?: string }; descriptionPlain?: string; lists?: { content: string }[] }[]
+      >(`https://api.lever.co/v0/postings/${token}?mode=json`);
+      if (!Array.isArray(data)) return null;
+      return {
+        boardUrl: `https://jobs.lever.co/${token}`,
+        jobs: data.map((j) => ({
+          title: j.text,
+          department: `${j.categories?.department ?? ""} ${j.categories?.team ?? ""}`,
+          text: `${j.descriptionPlain ?? ""} ${stripHtml(j.lists?.map((l) => l.content).join(" ") ?? "")}`,
+          url: j.hostedUrl ?? null,
+        })),
+      };
+    }
+    case "ashby": {
+      const data = await getJson<{
+        jobs: { title: string; jobUrl?: string; department?: string; team?: string; descriptionPlain?: string; isListed?: boolean }[];
+      }>(`https://api.ashbyhq.com/posting-api/job-board/${token}`);
+      if (!Array.isArray(data?.jobs)) return null;
+      return {
+        boardUrl: `https://jobs.ashbyhq.com/${token}`,
+        jobs: data.jobs
+          .filter((j) => j.isListed !== false)
+          .map((j) => ({ title: j.title, department: `${j.department ?? ""} ${j.team ?? ""}`, text: j.descriptionPlain ?? "", url: j.jobUrl ?? null })),
+      };
+    }
+    case "workable": {
+      const data = await getJson<{ name?: string; jobs: { title: string; url?: string; department?: string; description?: string }[] }>(
+        `https://apply.workable.com/api/v1/widget/accounts/${token}?details=true`,
+      );
+      if (!Array.isArray(data?.jobs)) return null;
+      // Guessed account names can belong to someone else — require the account name to match.
+      if (companyName && data.name && !namesMatch(data.name, companyName)) return null;
+      return {
+        boardUrl: `https://apply.workable.com/${token}/`,
+        jobs: data.jobs.map((j) => ({ title: j.title, department: j.department ?? "", text: stripHtml(j.description ?? ""), url: j.url ?? null })),
+      };
+    }
+    case "recruitee": {
+      const data = await getJson<{ offers: { title: string; careers_url?: string; department?: string | null; description?: string; requirements?: string }[] }>(
+        `https://${token}.recruitee.com/api/offers/`,
+      );
+      if (!Array.isArray(data?.offers)) return null;
+      return {
+        boardUrl: `https://${token}.recruitee.com/`,
+        jobs: data.offers.map((j) => ({
+          title: j.title,
+          department: j.department ?? "",
+          text: stripHtml(`${j.description ?? ""} ${j.requirements ?? ""}`),
+          url: j.careers_url ?? null,
+        })),
+      };
+    }
+    case "smartrecruiters": {
+      // Titles only: full descriptions need one request per posting.
+      const data = await getJson<{ content: { id: string; name: string; department?: { label?: string } }[] }>(
+        `https://api.smartrecruiters.com/v1/companies/${token}/postings?limit=100`,
+      );
+      if (!Array.isArray(data?.content) || data.content.length === 0) return null; // unknown ids also return []
+      return {
+        boardUrl: `https://careers.smartrecruiters.com/${token}`,
+        jobs: data.content.map((j) => ({
+          title: j.name,
+          department: j.department?.label ?? "",
+          text: "",
+          url: `https://jobs.smartrecruiters.com/${token}/${j.id}`,
+        })),
+      };
+    }
   }
-  if (provider === "lever") {
-    const data = await getJson<{ text: string; categories?: { team?: string; department?: string }; descriptionPlain?: string; lists?: { content: string }[] }[]>(
-      `https://api.lever.co/v0/postings/${token}?mode=json`,
-    );
-    if (!Array.isArray(data)) return null;
-    return {
-      boardUrl: `https://jobs.lever.co/${token}`,
-      jobs: data.map((j) => ({
-        title: j.text,
-        department: `${j.categories?.department ?? ""} ${j.categories?.team ?? ""}`,
-        text: `${j.descriptionPlain ?? ""} ${stripHtml(j.lists?.map((l) => l.content).join(" ") ?? "")}`,
-      })),
-    };
-  }
-  const data = await getJson<{ jobs: { title: string; department?: string; team?: string; descriptionPlain?: string; isListed?: boolean }[] }>(
-    `https://api.ashbyhq.com/posting-api/job-board/${token}`,
-  );
-  if (!Array.isArray(data?.jobs)) return null;
-  const listed = data.jobs.filter((j) => j.isListed !== false);
-  return {
-    boardUrl: `https://jobs.ashbyhq.com/${token}`,
-    jobs: listed.map((j) => ({ title: j.title, department: `${j.department ?? ""} ${j.team ?? ""}`, text: j.descriptionPlain ?? "" })),
-  };
 }
 
 const ENG_ROLE = /\b(engineer|engineering|developer|sre|devops|platform|infrastructure|architect|security|data|machine learning|ml|software|backend|frontend|full[- ]?stack)\b/i;
@@ -136,11 +198,21 @@ function summariseJobs(provider: Provider, boardUrl: string, jobs: RawJob[]): Hi
   const eng = jobs.filter((j) => ENG_ROLE.test(`${j.title} ${j.department}`) && !NON_ENG_ROLE.test(j.title));
   const counts = new Map<string, number>();
   let microservicesMentions = 0;
+  const perJob: JobPosting[] = [];
   for (const j of eng) {
     const text = `${j.title} ${j.text}`;
-    for (const k of JOB_KEYWORDS) if (k.re.test(text)) counts.set(k.name, (counts.get(k.name) ?? 0) + 1);
+    const tools = JOB_KEYWORDS.filter((k) => k.re.test(text)).map((k) => k.name);
+    for (const t of tools) counts.set(t, (counts.get(t) ?? 0) + 1);
     if (MICROSERVICES_RE.test(text)) microservicesMentions++;
+    perJob.push({ title: j.title.trim(), url: j.url, tools });
   }
+  // The JDs worth reading before a call: most tools named, one per distinct title.
+  const seen = new Set<string>();
+  const matchingJobs = perJob
+    .filter((j) => j.tools.length > 0)
+    .sort((a, b) => b.tools.length - a.tools.length)
+    .filter((j) => (seen.has(j.title) ? false : (seen.add(j.title), true)))
+    .slice(0, 6);
   return {
     provider,
     boardUrl,
@@ -149,30 +221,34 @@ function summariseJobs(provider: Provider, boardUrl: string, jobs: RawJob[]): Hi
     sampleTitles: [...new Set(eng.map((j) => j.title.trim()))].slice(0, 6),
     tools: [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => ({ name, count })),
     microservicesMentions,
+    matchingJobs,
   };
 }
 
 /**
  * Find and analyse the company's public job board.
- * Honors `companies.jobs_board` ("greenhouse:vercel" / "none"), otherwise probes
- * Greenhouse → Ashby → Lever with name candidates. Returns the board ref to cache.
+ * Honors `companies.jobs_board` ("greenhouse:vercel" / "smartrecruiters:BoschGroup" / "none"),
+ * otherwise probes Greenhouse → Ashby → Lever → Workable → Recruitee with name candidates.
+ * Returns the board ref to cache.
  */
 export async function fetchHiringSignals(company: Company): Promise<{ hiring: HiringSignals | null; boardRef: string | null }> {
   const override = company.jobs_board?.trim();
   if (override === "none") return { hiring: null, boardRef: "none" };
 
   const attempts: [Provider, string][] = [];
-  if (override && /^(greenhouse|lever|ashby):[\w-]+$/.test(override)) {
-    const [p, t] = override.split(":") as [Provider, string];
-    attempts.push([p, t]);
+  const overrideMatch = override?.match(/^(greenhouse|lever|ashby|workable|recruitee|smartrecruiters):([\w.-]+)$/);
+  if (overrideMatch) {
+    attempts.push([overrideMatch[1] as Provider, overrideMatch[2]]);
   } else {
+    // SmartRecruiters ids are case-sensitive company names, so it is only used via an explicit override.
     for (const t of boardCandidates(company)) {
-      attempts.push(["greenhouse", t], ["ashby", t], ["lever", t]);
+      for (const p of PROVIDERS.filter((p) => p !== "smartrecruiters")) attempts.push([p, t]);
     }
   }
 
   // Probe in parallel; take the first hit in priority order.
-  const results = await Promise.all(attempts.map(([p, t]) => loadBoard(p, t)));
+  // Explicit overrides are trusted; guesses are name-checked where the API exposes the owner.
+  const results = await Promise.all(attempts.map(([p, t]) => loadBoard(p, t, overrideMatch ? undefined : company.name)));
   // Prefer a board with openings; fall back to an existing-but-empty board.
   let idx = results.findIndex((r) => r && r.jobs.length > 0);
   if (idx === -1) idx = results.findIndex(Boolean);
@@ -203,7 +279,8 @@ function parseFeed(xml: string): BlogPost[] {
       const parsed = date ? new Date(date) : null;
       return { title, url, published: parsed && !isNaN(parsed.getTime()) ? parsed.toISOString() : null };
     })
-    .filter((p) => p.title && p.url)
+    // Drop scheduled posts dated in the future.
+    .filter((p) => p.title && p.url && (!p.published || new Date(p.published).getTime() <= Date.now() + 86_400_000))
     .sort((a, b) => (b.published ?? "").localeCompare(a.published ?? ""))
     .slice(0, 6);
 }
@@ -254,7 +331,93 @@ export async function fetchBlogPosts(company: Company): Promise<{ posts: BlogPos
   return idx === -1 ? { posts: [], feedRef: null } : { posts: results[idx]!, feedRef: list[idx] };
 }
 
+// ── News: Google News RSS + Hacker News ──────────────────────────────────────
+
+const NEWS_WINDOW_DAYS = 60;
+
+/** Google News RSS search — free, keyless. Titles arrive as "Headline - Publisher". */
+async function googleNews(company: Company): Promise<NewsItem[]> {
+  const override = company.news_query?.trim();
+  if (override === "none") return [];
+  const name = company.name.replace(/,?\s+(Inc|Labs|LLC|Ltd)\.?$/i, "");
+  // Tech/business context keeps namesakes out ("postman" the mail carrier, "Prisma" the REIT).
+  const query = override || `"${name}" (software OR developer OR developers OR engineering OR API OR cloud OR AI OR platform OR launches OR raises OR acquires OR "open source")`;
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:${NEWS_WINDOW_DAYS}d`)}&hl=en-US&gl=US&ceid=US:en`;
+  const res = await fetchWithTimeout(url, { headers: { Accept: "application/rss+xml" } });
+  if (!res?.ok) return [];
+  const xml = await res.text();
+  // The company must appear in the headline as a proper noun (case-sensitive), not a common word.
+  const keyword = override ? (override.match(/"([^"]+)"/)?.[1] ?? override.split(/\s+/)[0]) : name;
+  const nameRe = new RegExp(`\\b${escapeRegExp(keyword)}\\b`, override ? "i" : "");
+  const seen = new Set<string>();
+  return (xml.match(/<item>[\s\S]*?<\/item>/g) ?? [])
+    .map((item) => {
+      const raw = decodeEntities(stripCdata(item.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "")).trim();
+      let source = decodeEntities(item.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] ?? "").trim();
+      const title = source && raw.endsWith(` - ${source}`) ? raw.slice(0, -(source.length + 3)) : raw;
+      if (/^https?:\/\//.test(source)) source = source.replace(/^https?:\/\/(www\.)?/, "").replace(/\/.*$/, "");
+      const date = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1];
+      const parsed = date ? new Date(date) : null;
+      return {
+        title,
+        url: (item.match(/<link>([\s\S]*?)<\/link>/)?.[1] ?? "").trim(),
+        source: source || "Google News",
+        published: parsed && !isNaN(parsed.getTime()) ? parsed.toISOString() : null,
+        kind: "news" as const,
+      };
+    })
+    .filter((n) => n.title && n.url && nameRe.test(n.title) && !LOW_SIGNAL_HEADLINE.test(n.title))
+    // Syndicated duplicates share a headline prefix.
+    .filter((n) => {
+      const key = n.title.toLowerCase().slice(0, 48);
+      return seen.has(key) ? false : (seen.add(key), true);
+    })
+    .sort((a, b) => (b.published ?? "").localeCompare(a.published ?? ""))
+    .slice(0, 8);
+}
+
+/** Tutorials, comparisons and SEO listicles say nothing about what the company itself is doing. */
+const LOW_SIGNAL_HEADLINE = /\[\d{4}\]|\bhow to\b|\bvs\.?\s|\bin \d+ steps\b|\b\d+ steps\b|\btutorial\b|\bbest .* alternatives\b|\bstock (price|forecast)\b|\breview:/i;
+
+/** Hacker News stories linking to the company's domain — what engineers are discussing. */
+async function hackerNews(company: Company): Promise<NewsItem[]> {
+  if (!company.domain) return [];
+  const domain = company.domain.replace(/^www\./, "");
+  const since = Math.floor(Date.now() / 1000) - 120 * 86_400;
+  const data = await getJson<{ hits: { title: string; url: string | null; points: number; created_at: string; objectID: string }[] }>(
+    `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(domain)}&restrictSearchableAttributes=url&tags=story&numericFilters=${encodeURIComponent(`created_at_i>${since},points>=5`)}&hitsPerPage=20`,
+  );
+  return (data?.hits ?? [])
+    .filter((h) => h.url && new URL(h.url).hostname.endsWith(domain))
+    .sort((a, b) => b.points - a.points)
+    .slice(0, 5)
+    .map((h) => ({
+      title: h.title,
+      url: `https://news.ycombinator.com/item?id=${h.objectID}`,
+      source: "Hacker News",
+      published: h.created_at,
+      kind: "hn" as const,
+      points: h.points,
+    }));
+}
+
+export async function fetchNews(company: Company): Promise<NewsItem[]> {
+  const [news, hn] = await Promise.all([googleNews(company).catch(() => []), hackerNews(company).catch(() => [])]);
+  return [...news, ...hn];
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/** "Datadog, Inc." ~ "Datadog" ~ "datadog-hq": compare the alphanumeric stems. */
+function namesMatch(a: string, b: string) {
+  const x = slug(a.replace(/,?\s+(inc|labs|llc|ltd|gmbh|corp)\.?$/i, ""));
+  const y = slug(b.replace(/,?\s+(inc|labs|llc|ltd|gmbh|corp)\.?$/i, ""));
+  return Boolean(x && y) && (x.includes(y) || y.includes(x));
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function stripCdata(s: string) {
   return s.replace(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/, "$1");

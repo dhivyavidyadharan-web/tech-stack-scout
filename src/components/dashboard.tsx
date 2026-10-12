@@ -51,6 +51,7 @@ export function Dashboard() {
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [query, setQuery] = useState("");
   const [stack, setStack] = useState("all");
+  const [language, setLanguage] = useState("all");
   const [velocity, setVelocity] = useState("all");
   const [arch, setArch] = useState("all");
   const [sort, setSort] = useState<SortKey>("fit");
@@ -154,10 +155,24 @@ export function Dashboard() {
         .forEach((t) => counts.set(t.name, (counts.get(t.name) ?? 0) + 1)),
     );
     return [
-      { value: "all", label: "All cloud stacks" },
+      { value: "all", label: "All cloud & services" },
       ...[...counts.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([name, n]) => ({ value: name, label: `${name} (${n})` })),
+    ];
+  }, [companies]);
+
+  // Languages that make up at least 5% of some account's code, most common first.
+  const languageOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    companies?.forEach((c) =>
+      c.intelligence?.dominant_languages
+        .filter((l) => l.percentage >= 5)
+        .forEach((l) => counts.set(l.name, (counts.get(l.name) ?? 0) + 1)),
+    );
+    return [
+      { value: "all", label: "All languages" },
+      ...[...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, n]) => ({ value: name, label: `${name} (${n})` })),
     ];
   }, [companies]);
 
@@ -165,7 +180,15 @@ export function Dashboard() {
     if (!companies) return [];
     const q = query.trim().toLowerCase();
     return companies
-      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.github_org.includes(q) || c.intelligence?.dominant_languages.some((l) => l.name.toLowerCase().includes(q)))
+      .filter(
+        (c) =>
+          !q ||
+          c.name.toLowerCase().includes(q) ||
+          c.github_org.includes(q) ||
+          c.intelligence?.dominant_languages.some((l) => l.name.toLowerCase().includes(q)) ||
+          c.intelligence?.cloud_infra_tools.some((t) => t.name.toLowerCase().includes(q)),
+      )
+      .filter((c) => language === "all" || c.intelligence?.dominant_languages.some((l) => l.name === language && l.percentage >= 5))
       .filter((c) => stack === "all" || c.intelligence?.cloud_infra_tools.some((t) => t.confirmed && t.name === stack))
       .filter((c) => velocity === "all" || c.intelligence?.velocity_score === velocity)
       .filter((c) => {
@@ -188,7 +211,7 @@ export function Dashboard() {
             return a.name.localeCompare(b.name);
         }
       });
-  }, [companies, query, stack, velocity, arch, sort]);
+  }, [companies, query, stack, language, velocity, arch, sort]);
 
   const metrics = useMemo(() => {
     const list = companies ?? [];
@@ -202,7 +225,7 @@ export function Dashboard() {
     };
   }, [companies]);
 
-  const filtersActive = query || stack !== "all" || velocity !== "all" || arch !== "all";
+  const filtersActive = query || stack !== "all" || language !== "all" || velocity !== "all" || arch !== "all";
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -287,10 +310,11 @@ export function Dashboard() {
       <section className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search company, handle or language" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
+          <Input placeholder="Search company, language or tool" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
         </div>
         <div className="flex flex-wrap gap-2">
-          <FilterSelect label="Filter by cloud stack" items={stackOptions} value={stack} onChange={setStack} />
+          <FilterSelect label="Filter by language" items={languageOptions} value={language} onChange={setLanguage} />
+          <FilterSelect label="Filter by cloud and services" items={stackOptions} value={stack} onChange={setStack} />
           <FilterSelect label="Filter by velocity" items={VELOCITIES} value={velocity} onChange={setVelocity} />
           <FilterSelect label="Filter by architecture or hiring" items={ARCHITECTURES} value={arch} onChange={setArch} />
           <FilterSelect label="Sort accounts" items={SORTS} value={sort} onChange={(v) => setSort(v as SortKey)} />
@@ -300,6 +324,7 @@ export function Dashboard() {
               onClick={() => {
                 setQuery("");
                 setStack("all");
+                setLanguage("all");
                 setVelocity("all");
                 setArch("all");
               }}
@@ -347,7 +372,7 @@ export function Dashboard() {
       </main>
 
       <footer className="mt-10 border-t pt-4 text-center text-xs text-muted-foreground">
-        Data: GitHub REST API · public job boards (Greenhouse, Lever, Ashby) · engineering blog feeds · AI: Google Gemini Flash · Storage: Supabase · Auto-refresh weekly via Vercel Cron
+        Data: GitHub REST API · job boards (Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters) · company blogs · Google News · Hacker News · AI: Google Gemini Flash · Storage: Supabase · Auto-refresh weekly via Vercel Cron
       </footer>
     </div>
   );

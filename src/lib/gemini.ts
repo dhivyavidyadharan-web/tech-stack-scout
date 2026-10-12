@@ -2,7 +2,7 @@ import "server-only";
 import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 import { env } from "./env";
-import type { PitchTone, PitchVariants, RawStats, VelocityScore } from "./types";
+import type { NewsItem, PitchTone, PitchVariants, RawStats, VelocityScore } from "./types";
 
 /**
  * All runtime LLM calls go through Google Gemini Flash (never Claude).
@@ -10,6 +10,8 @@ import type { PitchTone, PitchVariants, RawStats, VelocityScore } from "./types"
  */
 
 export interface AiNarrative {
+  /** 1–2 sentence TL;DR shown on the card; the full summary sits behind a dropdown. */
+  overview: string;
   summary: string; // exactly two paragraphs separated by "\n\n"
   pitch: string;
   variants: PitchVariants;
@@ -27,6 +29,7 @@ export function geminiClient(apiKey: string): GoogleGenAI {
 }
 
 const narrativeSchema = z.object({
+  overview: z.string().min(30).max(400),
   paragraph_1: z.string().min(80),
   paragraph_2: z.string().min(80),
   outreach_pitch: z.string().min(20).max(320),
@@ -39,6 +42,7 @@ const narrativeSchema = z.object({
 const SYSTEM = `You are a senior solutions engineer helping an enterprise account executive prepare for outreach.
 You write precise, factual engineering briefs grounded ONLY in the data provided. Never invent repos, tools, metrics or customers.
 If a signal is marked "mentioned only", treat it as unconfirmed and hedge ("appears to", "references").
+Numbers, names and claims from headlines must be used exactly as written — never round, re-derive or reinterpret a figure (if a headline says "58% of traffic is bots", do not turn it into a claim about deployments). When unsure what a headline means, cite it by its subject rather than its numbers.
 No markdown, no bullet points, no emojis, no hype words like "revolutionize" or "game-changer".`;
 
 function compactStats(stats: RawStats, velocity: VelocityScore) {
@@ -76,11 +80,18 @@ function compactStats(stats: RawStats, velocity: VelocityScore) {
         }
       : "no public job board found",
     recent_blog_posts: stats.blogPosts.slice(0, 5).map((p) => `${p.title}${p.published ? ` (${p.published.slice(0, 10)})` : ""}`),
+    recent_news: stats.news
+      .filter((n) => n.kind === "news")
+      .slice(0, 5)
+      .map((n) => `${n.title} — ${n.source}${n.published ? ` (${n.published.slice(0, 10)})` : ""}`),
+    hacker_news_discussions: stats.news.filter((n) => n.kind === "hn").map((n) => `${n.title} (${n.points} points)`),
+    recent_releases: stats.building.releases.map((r) => `${r.repo} ${r.tag}: ${r.name} (${r.published.slice(0, 10)})`),
+    new_repos_last_120d: stats.building.newRepos.map((r) => `${r.name} (${r.language ?? "n/a"}): ${r.description ?? ""}`),
   };
 }
 
 export interface HookAngle {
-  angle: "hiring" | "blog" | "architecture" | "flagship-repo" | "language-mix" | "monorepo" | "infrastructure" | "delivery-pace";
+  angle: "news" | "release" | "new-repo" | "hiring" | "blog" | "architecture" | "flagship-repo" | "language-mix" | "monorepo" | "infrastructure" | "delivery-pace";
   fact: string;
 }
 
@@ -91,6 +102,15 @@ export interface HookAngle {
  */
 export function hookAngles(stats: RawStats): HookAngle[] {
   const out: HookAngle[] = [];
+  // What they're building *right now* beats everything else.
+  const headline = stats.news.find((n) => n.kind === "news");
+  if (headline) out.push({ angle: "news", fact: `In the news: "${headline.title}" (${headline.source}${headline.published ? `, ${headline.published.slice(0, 10)}` : ""})` });
+  const hn = stats.news.find((n) => n.kind === "hn" && (n.points ?? 0) >= 50);
+  if (hn) out.push({ angle: "news", fact: `Trending on Hacker News: "${hn.title}" (${hn.points} points)` });
+  const release = stats.building.releases[0];
+  if (release) out.push({ angle: "release", fact: `Just shipped ${release.repo} ${release.tag}${release.name !== release.tag ? ` ("${release.name}")` : ""} on ${release.published.slice(0, 10)}` });
+  const fresh = stats.building.newRepos[0];
+  if (fresh) out.push({ angle: "new-repo", fact: `New repo ${fresh.name} created ${fresh.created.slice(0, 10)}${fresh.description ? `: ${fresh.description}` : ""}` });
   const h = stats.hiring;
   if (h && h.engineeringRoles > 0) {
     const title = h.sampleTitles.find((t) => !/^(senior |staff |principal )?software engineer$/i.test(t)) ?? h.sampleTitles[0];
@@ -128,8 +148,9 @@ Candidate hook angles for this company, most distinctive first:
 ${hookAngles(stats).map((h, i) => `${i + 1}. [${h.angle}] ${h.fact}`).join("\n")}
 
 Write:
+0. overview: 1–2 sentences (max 45 words) an AE can skim in five seconds — what they build, their dominant stack, and the single most relevant thing they are doing right now.
 1. paragraph_1 (3–4 sentences): the engineering environment — dominant languages with their shares, flagship repos, architecture (microservices or not, with the evidence) and what the codebase suggests they build.
-2. paragraph_2 (3–4 sentences): delivery & infrastructure — CI/CD, containers/cloud/IaC, monorepo tooling, build velocity, plus what their hiring and recent blog posts reveal about where engineering is investing — and the most likely developer-productivity friction this creates.
+2. paragraph_2 (3–4 sentences): delivery & infrastructure — CI/CD, containers/cloud/IaC, monorepo tooling, build velocity, plus what their hiring, recent releases, news and blog posts reveal about where engineering is investing right now — and the most likely developer-productivity friction this creates.
 3. outreach_pitch: ONE sentence (max 30 words) cold-email opener built on the most distinctive candidate angle (prefer the top of the list). It must sound like it could only have been written to THIS company — name the specific role, post, repo or architecture detail. Connect it naturally to the seller's product.
 4. pitch_technical, pitch_executive, pitch_casual: one sentence each for a staff engineer, a VP of Engineering, and a friendly peer. Each must use a DIFFERENT angle from the list than outreach_pitch and from each other.
 5. hook_angle: the bracketed angle name outreach_pitch is built on (e.g. "hiring").
@@ -147,9 +168,10 @@ const responseSchema = {
     pitch_executive: { type: Type.STRING },
     pitch_casual: { type: Type.STRING },
     hook_angle: { type: Type.STRING },
+    overview: { type: Type.STRING },
   },
-  required: ["paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
-  propertyOrdering: ["paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
+  required: ["overview", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
+  propertyOrdering: ["overview", "paragraph_1", "paragraph_2", "outreach_pitch", "pitch_technical", "pitch_executive", "pitch_casual", "hook_angle"],
 };
 
 const oneParagraph = (s: string) => s.replace(/\s*\n+\s*/g, " ").replace(/\*\*/g, "").trim();
@@ -178,6 +200,7 @@ export async function generateNarrative(stats: RawStats, velocity: VelocityScore
       });
       const parsed = narrativeSchema.parse(JSON.parse(res.text ?? "{}"));
       return {
+        overview: oneParagraph(parsed.overview),
         // Enforce the "exactly two paragraphs" contract regardless of model formatting.
         summary: `${oneParagraph(parsed.paragraph_1)}\n\n${oneParagraph(parsed.paragraph_2)}`,
         pitch: oneParagraph(parsed.outreach_pitch),
@@ -195,6 +218,41 @@ export async function generateNarrative(stats: RawStats, velocity: VelocityScore
   }
   console.error("[gemini] narrative generation failed, using fallback:", lastError);
   return fallbackNarrative(stats, velocity);
+}
+
+/**
+ * News search is noisy for common-word company names. One cheap Gemini call keeps only
+ * headlines about THIS company's products, engineering or business. Hacker News items
+ * are already scoped to the company's domain, so they pass through untouched.
+ */
+export async function filterRelevantNews(
+  company: { name: string; domain: string | null; description: string | null },
+  items: NewsItem[],
+): Promise<NewsItem[]> {
+  const news = items.filter((n) => n.kind === "news");
+  const apiKey = env.geminiApiKey();
+  if (!apiKey || news.length === 0) return items;
+  try {
+    const res = await geminiClient(apiKey).models.generateContent({
+      model: env.geminiModel(),
+      contents: `Company: ${company.name}${company.domain ? ` (${company.domain})` : ""}${company.description ? ` — ${company.description}` : ""}
+
+Headlines:
+${news.map((n, i) => `${i}. ${n.title} — ${n.source}`).join("\n")}
+
+Return the indexes of headlines that are genuinely about THIS company (its products, engineering, funding, acquisitions, partnerships, leadership or workforce). Exclude namesakes, unrelated people or places, generic tutorials, comparison listicles, and reviews or promotion of consumer content (shows, games, music) — the reader sells software to the engineering team.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: { type: Type.OBJECT, properties: { relevant: { type: Type.ARRAY, items: { type: Type.INTEGER } } }, required: ["relevant"] },
+        temperature: 0,
+      },
+    });
+    const keep = new Set(z.object({ relevant: z.array(z.number().int()) }).parse(JSON.parse(res.text ?? "{}")).relevant);
+    return [...news.filter((_, i) => keep.has(i)), ...items.filter((n) => n.kind === "hn")];
+  } catch (err) {
+    console.error("[gemini] news relevance check failed, keeping heuristic results:", err);
+    return items;
+  }
 }
 
 const TONE_GUIDE: Record<PitchTone, string> = {
@@ -276,7 +334,9 @@ export function fallbackNarrative(stats: RawStats, velocity: VelocityScore): AiN
   }.${archText}${hiringText}`;
 
   const detail = flagship ? `${flagship.name}` : `your ${langs[0]?.name ?? "core"} services`;
+  const now = hookAngles(stats).find((h) => ["news", "release", "new-repo"].includes(h.angle));
   return {
+    overview: `${name} builds primarily in ${langText}${flagship ? `, led by ${flagship.name}` : ""}.${now ? ` ${now.fact}.` : ""}`.replace(/\.\./g, "."),
     summary: `${p1.replace(/\s+/g, " ").trim()}\n\n${p2.replace(/\s+/g, " ").trim()}`,
     pitch: `${hookAngles(stats)[0]?.fact ?? `${stats.commits30d} commits landed across ${detail} this month`} caught my eye — curious how much of your engineers' week goes to waiting on builds and reviews?`,
     variants: {

@@ -1,7 +1,7 @@
 import "server-only";
 import { env } from "./env";
 import { detectArchitecture, detectInfra, type RepoSignals } from "./infra-detection";
-import type { LanguageShare, RawStats, TopRepo } from "./types";
+import type { LanguageShare, NewRepo, RawStats, Release, TopRepo } from "./types";
 
 const API = "https://api.github.com";
 const DAY = 86_400_000;
@@ -48,6 +48,7 @@ interface GhRepo {
   language: string | null;
   stargazers_count: number;
   pushed_at: string;
+  created_at: string;
   size: number;
   fork: boolean;
   archived: boolean;
@@ -199,7 +200,10 @@ export async function collectOrgStats(handle: string): Promise<RawStats> {
 
   const since = new Date(now - 30 * DAY).toISOString();
 
-  const [langResults, commitResults, deepResults] = await Promise.all([
+  // "What are they building now": latest release per active core repo.
+  const releaseRepos = core.filter((r) => age(r.pushed_at) <= 60 * DAY).slice(0, authed ? 8 : 2);
+
+  const [langResults, commitResults, deepResults, releaseResults] = await Promise.all([
     pool(langRepos, 6, (r) => ghSoft<Record<string, number>>(`/repos/${r.full_name}/languages`)),
     pool(commitRepos, 6, (r) =>
       ghSoft<{ commit: { committer: { date: string } | null } }[]>(
@@ -214,7 +218,29 @@ export async function collectOrgStats(handle: string): Promise<RawStats> {
       const deps = paths.includes("package.json") ? await readPackageJsonDeps(r.full_name) : [];
       return { repo: r.name, paths, deps, text: "" };
     }),
+    pool(releaseRepos, 6, (r) =>
+      ghSoft<{ tag_name: string; name: string | null; html_url: string; published_at: string | null; draft: boolean; prerelease: boolean }[]>(
+        `/repos/${r.full_name}/releases?per_page=3`,
+      ),
+    ),
   ]);
+
+  const releases: Release[] = releaseRepos
+    .map((repo, i) => {
+      const rel = releaseResults[i]?.find((x) => !x.draft && !x.prerelease && x.published_at) ?? releaseResults[i]?.find((x) => !x.draft && x.published_at);
+      return rel && age(rel.published_at!) <= 90 * DAY
+        ? { repo: repo.name, tag: rel.tag_name, name: (rel.name || rel.tag_name).slice(0, 120), url: rel.html_url, published: rel.published_at! }
+        : null;
+    })
+    .filter((r): r is Release => r !== null)
+    .sort((a, b) => b.published.localeCompare(a.published))
+    .slice(0, 5);
+
+  const newRepos: NewRepo[] = analyzed
+    .filter((r) => age(r.created_at) <= 120 * DAY)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 5)
+    .map((r) => ({ name: r.name, url: r.html_url, description: r.description, language: r.language, created: r.created_at }));
 
   // Languages — aggregate bytes; fall back to primary language × repo size.
   const bytes = new Map<string, number>();
@@ -300,5 +326,7 @@ export async function collectOrgStats(handle: string): Promise<RawStats> {
     // Filled in by the enrichment pipeline from non-GitHub sources.
     hiring: null,
     blogPosts: [],
+    news: [],
+    building: { releases, newRepos },
   };
 }

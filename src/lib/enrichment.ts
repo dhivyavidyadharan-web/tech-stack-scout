@@ -2,25 +2,28 @@ import "server-only";
 import { db } from "./supabase";
 import { collectOrgStats } from "./github";
 import { withHiringEvidence, withJobEvidence } from "./infra-detection";
-import { fetchBlogPosts, fetchHiringSignals } from "./signals";
-import { generateNarrative } from "./gemini";
+import { fetchBlogPosts, fetchHiringSignals, fetchNews } from "./signals";
+import { filterRelevantNews, generateNarrative } from "./gemini";
 import { fitScore, velocityFrom } from "./scoring";
 import type { Company, EngineeringIntelligence } from "./types";
 
 /**
  * The full enrichment pipeline for one company:
- *   GitHub (live) → aggregate + detect infra → score → Gemini Flash narrative → upsert + snapshot.
+ *   GitHub + job boards + blog + news (live, in parallel) → detect infra/architecture → score
+ *   → Gemini Flash narrative → upsert + snapshot.
  * Throws GitHubError for 404 / rate limits so callers can surface precise UI states.
  */
 export async function enrichCompany(company: Company): Promise<EngineeringIntelligence> {
   // GitHub is required (throws on 404/rate limit); jobs + blog are best-effort enrichments.
-  const [stats, jobs, blog] = await Promise.all([
+  const [stats, jobs, blog, news] = await Promise.all([
     collectOrgStats(company.github_org),
     fetchHiringSignals(company).catch(() => ({ hiring: null, boardRef: company.jobs_board })),
     fetchBlogPosts(company).catch(() => ({ posts: [], feedRef: company.blog_feed_url })),
+    fetchNews(company).catch(() => []),
   ]);
   stats.hiring = jobs.hiring;
   stats.blogPosts = blog.posts;
+  stats.news = await filterRelevantNews({ name: company.name, domain: company.domain, description: stats.orgDescription }, news);
   if (jobs.hiring) {
     stats.infra = withJobEvidence(stats.infra, jobs.hiring.tools, jobs.hiring.provider);
     stats.architecture = withHiringEvidence(stats.architecture, jobs.hiring.microservicesMentions, jobs.hiring.engineeringRoles);
@@ -53,6 +56,9 @@ export async function enrichCompany(company: Company): Promise<EngineeringIntell
     hiring_signals: stats.hiring,
     architecture: stats.architecture,
     blog_posts: stats.blogPosts,
+    overview: narrative.overview,
+    news: stats.news,
+    building: stats.building,
   };
 
   const supabase = db();

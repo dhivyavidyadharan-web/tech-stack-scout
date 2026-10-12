@@ -8,6 +8,7 @@ import {
   Briefcase,
   Check,
   ClipboardCopy,
+  ChevronRight,
   Copy,
   ExternalLink,
   GitCommitHorizontal,
@@ -37,6 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ago, apiFetch, buildBrief, copyText, isStale, langColor, shortAgo, toastApiError } from "@/lib/client";
 import type { Architecture, CompanyWithIntel, EngineeringIntelligence, HiringSignals, PitchTone, VelocityScore } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ActivityList, activityFrom, highlightsFrom } from "./activity-feed";
 import { HistoryPanel } from "./history-panel";
 
 interface Props {
@@ -205,6 +207,10 @@ function IntelBody({
   onIntelUpdate: Props["onIntelUpdate"];
 }) {
   const paragraphs = (intel.engineering_summary ?? "").split(/\n\s*\n/).filter(Boolean);
+  // Short TL;DR up front; the full two-paragraph context lives behind a dropdown.
+  const overview = intel.overview ?? paragraphs[0]?.match(/^.*?[.!?](\s|$)/)?.[0] ?? "";
+  const activity = activityFrom(intel);
+  const matchingJobs = intel.hiring_signals?.matchingJobs ?? [];
   const confirmed = intel.cloud_infra_tools.filter((t) => t.confirmed);
   const mentioned = intel.cloud_infra_tools.filter((t) => !t.confirmed);
 
@@ -215,6 +221,15 @@ function IntelBody({
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           Last refresh failed: {intel.refresh_error} Showing previous data.
         </p>
+      )}
+
+      <p className="text-sm leading-relaxed">{overview}</p>
+
+      {activity.length > 0 && (
+        <section className="space-y-2">
+          <SectionLabel>Building now</SectionLabel>
+          <ActivityList items={highlightsFrom(activity)} />
+        </section>
       )}
 
       <div className="grid grid-cols-3 gap-2 text-center">
@@ -284,9 +299,9 @@ function IntelBody({
 
       <OutreachHook companyId={company.id} intel={intel} onIntelUpdate={onIntelUpdate} />
 
-      <Accordion multiple defaultValue={["context"]} className="-mx-1">
+      <Accordion multiple defaultValue={[]} className="-mx-1">
         <AccordionItem value="context">
-          <AccordionTrigger className="px-1 text-sm">Engineering Context</AccordionTrigger>
+          <AccordionTrigger className="px-1 text-sm">Engineering context (full summary)</AccordionTrigger>
           <AccordionContent className="space-y-3 px-1 text-sm leading-relaxed text-muted-foreground">
             {paragraphs.map((p, i) => (
               <p key={i}>{p}</p>
@@ -314,23 +329,44 @@ function IntelBody({
             ))}
           </AccordionContent>
         </AccordionItem>
-        <AccordionItem value="blog">
-          <AccordionTrigger className="px-1 text-sm">Recent engineering posts ({intel.blog_posts?.length ?? 0})</AccordionTrigger>
+        <AccordionItem value="activity">
+          <AccordionTrigger className="px-1 text-sm">All recent activity ({activity.length})</AccordionTrigger>
           <AccordionContent className="px-1">
-            {intel.blog_posts?.length ? (
-              <ul className="divide-y text-sm">
-                {intel.blog_posts.map((p) => (
-                  <li key={p.url} className="flex items-start justify-between gap-3 py-2">
-                    <a href={p.url} target="_blank" rel="noreferrer" className="line-clamp-2 text-xs hover:underline">
-                      {p.title}
-                    </a>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">{p.published ? shortAgo(p.published) : ""}</span>
+            <ActivityList items={activity} />
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Sources: Google News, Hacker News, GitHub releases &amp; new repos, company blog feed. Set{" "}
+              <code className="font-mono">news_query</code> or <code className="font-mono">blog_feed_url</code> in Supabase to tune.
+            </p>
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="jobs">
+          <AccordionTrigger className="px-1 text-sm">Matching job descriptions ({matchingJobs.length})</AccordionTrigger>
+          <AccordionContent className="px-1">
+            {matchingJobs.length ? (
+              <ul className="space-y-2">
+                {matchingJobs.map((j) => (
+                  <li key={j.title} className="space-y-1">
+                    {j.url ? (
+                      <a href={j.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-xs font-medium hover:underline">
+                        {j.title}
+                        <ChevronRight className="size-3" />
+                      </a>
+                    ) : (
+                      <span className="text-xs font-medium">{j.title}</span>
+                    )}
+                    <div className="flex flex-wrap gap-1">
+                      {j.tools.map((t) => (
+                        <span key={t} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="text-xs text-muted-foreground">
-                No blog feed found. Set <code className="font-mono">blog_feed_url</code> on this company in Supabase to add one.
+                {intel.hiring_signals ? "No open engineering roles name specific tools right now." : "No public job board found."}
               </p>
             )}
           </AccordionContent>
@@ -508,7 +544,7 @@ function HiringSection({ hiring }: { hiring: HiringSignals | null }) {
       <SectionLabel>Hiring signals</SectionLabel>
       {!hiring ? (
         <p className="text-xs text-muted-foreground">
-          No public Greenhouse, Lever or Ashby board found. Set <code className="font-mono">jobs_board</code> (e.g.{" "}
+          No public Greenhouse, Lever, Ashby, Workable or Recruitee board found. Set <code className="font-mono">jobs_board</code> (e.g.{" "}
           <code className="font-mono">greenhouse:acme</code>) in Supabase to add one.
         </p>
       ) : (

@@ -57,7 +57,7 @@ export interface Architecture {
 }
 
 export interface HiringSignals {
-  provider: "greenhouse" | "lever" | "ashby";
+  provider: "greenhouse" | "lever" | "ashby" | "workable" | "recruitee" | "smartrecruiters";
   boardUrl: string;
   totalRoles: number;
   engineeringRoles: number;
@@ -66,6 +66,46 @@ export interface HiringSignals {
   tools: { name: string; count: number }[];
   /** Postings that mention microservices / distributed systems. */
   microservicesMentions: number;
+  /** Engineering postings that name the most tools — the JDs worth reading before a call. */
+  matchingJobs?: JobPosting[];
+}
+
+export interface JobPosting {
+  title: string;
+  url: string | null;
+  /** Tools from JOB_KEYWORDS this posting mentions. */
+  tools: string[];
+}
+
+export interface NewsItem {
+  title: string;
+  url: string;
+  source: string;
+  published: string | null;
+  kind: "news" | "hn";
+  /** Hacker News points (kind = "hn"). */
+  points?: number;
+}
+
+export interface Release {
+  repo: string;
+  tag: string;
+  name: string;
+  url: string;
+  published: string;
+}
+
+export interface NewRepo {
+  name: string;
+  url: string;
+  description: string | null;
+  language: string | null;
+  created: string;
+}
+
+export interface Building {
+  releases: Release[];
+  newRepos: NewRepo[];
 }
 
 export interface BlogPost {
@@ -96,6 +136,8 @@ export interface RawStats {
   architecture: Architecture;
   hiring: HiringSignals | null;
   blogPosts: BlogPost[];
+  news: NewsItem[];
+  building: Building;
 }
 
 export interface Company {
@@ -108,6 +150,8 @@ export interface Company {
   jobs_board: string | null;
   /** Optional override / cached discovery: RSS/Atom URL or "none". */
   blog_feed_url: string | null;
+  /** Optional Google News query override for ambiguous names, or "none". */
+  news_query: string | null;
 }
 
 export interface EngineeringIntelligence {
@@ -133,6 +177,9 @@ export interface EngineeringIntelligence {
   hiring_signals: HiringSignals | null;
   architecture: Architecture | Record<string, never>;
   blog_posts: BlogPost[];
+  overview: string | null;
+  news: NewsItem[];
+  building: Building | Record<string, never>;
 }
 
 export interface Snapshot {
