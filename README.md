@@ -25,7 +25,6 @@ Built with Next.js 16 (App Router, TypeScript, Tailwind v4, shadcn/ui), Supabase
 - **Headline ticker**, a **leaderboard** ranked by fit (click a row to jump to the account), and a **"Live · synced 12s ago"** indicator
 - **Design:** baby pink × emerald × olive, with Fraunces + Plus Jakarta Sans, a grain texture and slowly drifting glows. All motion respects `prefers-reduced-motion`.
 - **Chart colours** come from a categorical palette checked with a colour-vision-deficiency validator for both light and dark surfaces. Pink and emerald are separated by lightness, so red-green colour-blind readers can still tell them apart.
-See [COMPONENTS_MAP.md](COMPONENTS_MAP.md) for the architecture diagrams.
 
 ---
 
