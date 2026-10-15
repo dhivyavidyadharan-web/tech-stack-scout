@@ -9,7 +9,7 @@ import { db } from "./supabase";
  *  2. rate-limit per IP and globally, stored in Supabase so limits hold across serverless instances.
  */
 
-type Action = "add" | "delete" | "enrich" | "pitch";
+type Action = "add" | "delete" | "enrich" | "pitch" | "feedback";
 
 const LIMITS: Record<Action, { perIp: number; global: number; windowSec: number }> = {
   add: { perIp: 6, global: 40, windowSec: 600 },
@@ -17,6 +17,7 @@ const LIMITS: Record<Action, { perIp: number; global: number; windowSec: number 
   // "Refresh all" on a 30-account watchlist needs 30 calls.
   enrich: { perIp: 40, global: 120, windowSec: 600 },
   pitch: { perIp: 20, global: 80, windowSec: 600 },
+  feedback: { perIp: 60, global: 200, windowSec: 600 },
 };
 
 export const MAX_WATCHLIST = 30;

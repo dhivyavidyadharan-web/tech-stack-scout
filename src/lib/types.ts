@@ -182,6 +182,19 @@ export interface Company {
   blog_feed_url: string | null;
   /** Optional Google News query override for ambiguous names, or "none". */
   news_query: string | null;
+  /** Feedback loop: did the outreach get a reply? (set by Nikhil after sending) */
+  reply_status: "replied" | "no_reply" | null;
+  reply_updated_at: string | null;
+}
+
+/** One 👍/👎 Nikhil gave an opener. */
+export interface OpenerFeedback {
+  id: string;
+  company_id: string;
+  opener: string;
+  tone: string;
+  rating: 1 | -1;
+  created_at: string;
 }
 
 export interface EngineeringIntelligence {
@@ -233,6 +246,8 @@ export interface Snapshot {
 export interface CompanyWithIntel extends Company {
   intelligence: EngineeringIntelligence | null;
   snapshots: Snapshot[];
+  /** Most recent opener ratings, newest first. */
+  feedback: OpenerFeedback[];
 }
 
 /** Uniform error envelope returned by every API route. */

@@ -43,7 +43,8 @@ Create a Supabase project, then run these two files in the **SQL Editor** in thi
 
 1. [`supabase/migrations/20261012000000_init_tech_stack_scout.sql`](supabase/migrations/20261012000000_init_tech_stack_scout.sql) creates the tables, indexes, RLS and the `stale_companies` view.
 2. [`supabase/migrations/20261012010000_hiring_blog_architecture.sql`](supabase/migrations/20261012010000_hiring_blog_architecture.sql) adds the job-board, blog and architecture columns.
-3. [`supabase/migrations/20261012020000_news_activity_overview.sql`](supabase/migrations/20261012020000_news_activity_overview.sql) adds the news, releases, overview and `news_query` columns.
+3. Later migrations add buying signals, unknowns, rate limiting and the feedback loop (`opener_feedback`, `companies.reply_status`). Run every file in `supabase/migrations/` in order.
+4. [`supabase/migrations/20261012020000_news_activity_overview.sql`](supabase/migrations/20261012020000_news_activity_overview.sql) adds the news, releases, overview and `news_query` columns.
 4. [`supabase/seed.sql`](supabase/seed.sql) adds five seed accounts: Supabase, Vercel, Postman, HashiCorp and Prisma.
 
 The seed accounts start without intelligence. Click **"Enrich them now"** on the dashboard and they'll be scanned live.
@@ -125,6 +126,8 @@ The cron route sets `maxDuration = 300` and works within a 240s budget. It refre
 | `POST /api/enrich/:companyId` | Runs the full pipeline: GitHub → infra detection → scoring → Gemini Flash → upsert and snapshot |
 | `GET /api/cron/refresh` | Bearer-protected. Refreshes companies whose `last_refreshed_at` is older than 7 days or null. With `?mode=new`, only never-enriched companies are processed. |
 | `POST /api/pitch/:companyId` | `{ tone: "technical" \| "executive" \| "casual", makePrimary? }`. Regenerates one hook from cached stats (Gemini only, no GitHub calls). |
+| `POST /api/feedback/:companyId` | `{ rating: "up" \| "down", opener, tone }`. Saves a 👍/👎. On 👎, Gemini writes a replacement opener that avoids rejected ones. |
+| `POST /api/outcome/:companyId` | `{ status: "replied" \| "no_reply" \| null }`. Records whether the outreach got a reply. |
 | `GET /api/export` | The watchlist as CSV, ready for a CRM import |
 | `GET /api/health` | Shows whether each integration is configured (never the secret values) and how much GitHub quota is left |
 
@@ -138,6 +141,17 @@ Errors always come back as `{ error, code, resetAt? }`. `code` is one of `GITHUB
 - **Observation → relevance → opener.** Each card shows *Why it matters for your product*: 2–3 Gemini-written pairs that tie one observed fact (a number, repo, tool, role or headline) to the specific friction the seller's product removes, followed by the outreach opener.
 - **Freshness is visible.** A per-account source row (GitHub ✓ · Jobs · Blog ✓ · News 8 · HN 2 · Gemini) shows what the last refresh actually used. The status strip shows the next scheduled weekly refresh, and the "Live · synced Xs ago" badge shows the last client sync.
 - **Server-rendered.** The first HTML response already contains every account, summary, opener and evidence item, so the product is complete even before JavaScript runs.
+
+## Feedback loop (how we know it's working for Nikhil)
+
+Every outreach hook has one small row under it:
+
+| Control | What Nikhil does | What Dora does |
+|---|---|---|
+| **👍 / 👎 "Would you send this?"** | Rates the opener | Saves it in `opener_feedback`. On 👎, Gemini immediately writes a replacement for that tone and is told to avoid every opener he has rejected for this company. Future full refreshes avoid them too. |
+| **"Got a reply?" Yes / No** | Records the real outcome after sending (click again to clear) | Saves it on the company (`reply_status`). The leaderboard shows it next to engineering complexity and buying signals. |
+
+The leaderboard header summarises the loop: **openers liked** and **reply rate**. Comparing replies against complexity and buying signals is how the score gets validated with real outcomes, instead of staying a hypothesis.
 
 ## Security & abuse protection
 

@@ -32,22 +32,28 @@ export function geminiClient(apiKey: string): GoogleGenAI {
   });
 }
 
+/** Trim instead of reject: a slightly long line shouldn't throw away an otherwise good answer. */
+const text = (min: number, max: number) => z.string().min(min).transform((v) => (v.length > max ? `${v.slice(0, max - 1).trimEnd()}…` : v));
+
 const narrativeSchema = z.object({
-  overview: z.string().min(30).max(400),
+  overview: text(30, 500),
   paragraph_1: z.string().min(80),
   paragraph_2: z.string().min(80),
-  outreach_pitch: z.string().min(20).max(320),
-  pitch_technical: z.string().min(20).max(320),
-  pitch_executive: z.string().min(20).max(320),
-  pitch_casual: z.string().min(20).max(320),
-  hook_angle: z.string().max(40).optional(),
+  outreach_pitch: text(20, 400),
+  pitch_technical: text(20, 400),
+  pitch_executive: text(20, 400),
+  pitch_casual: text(20, 400),
+  hook_angle: z.string().optional(),
   why_it_matters: z
-    .array(z.object({ signal: z.string().min(5).max(220), relevance: z.string().min(5).max(260) }))
+    .array(z.object({ signal: text(5, 300), relevance: text(5, 340) }))
     .min(1)
-    .max(3),
-  unknowns: z.array(z.string().min(5).max(200)).min(1).max(3),
-  hook_type: z.enum(["buying-signal", "context"]),
-  hook_evidence: z.string().min(5).max(320),
+    .transform((items) => items.slice(0, 3)),
+  unknowns: z
+    .array(text(5, 240))
+    .min(1)
+    .transform((items) => items.slice(0, 3)),
+  hook_type: z.enum(["buying-signal", "context"]).catch("context"),
+  hook_evidence: text(3, 400),
 });
 
 const SYSTEM = `You are a senior solutions engineer helping an enterprise account executive prepare for outreach.
@@ -148,8 +154,12 @@ const angleList = (stats: RawStats) =>
     .map((h, i) => `${i + 1}. [${h.type} · ${h.angle}] ${h.fact}`)
     .join("\n") || "(no candidate angles — public data is sparse)";
 
-function buildPrompt(stats: RawStats, velocity: VelocityScore): string {
-  return `Seller's product: ${env.sellerProduct()}.
+function buildPrompt(stats: RawStats, velocity: VelocityScore, disliked: string[] = []): string {
+  // Feedback loop: openers Nikhil thumbs-downed are shown so Gemini avoids that angle and style.
+  const rejected = disliked.length
+    ? `\nThe account executive REJECTED these previous openers for this company — do not reuse their angle, wording or structure:\n${disliked.map((d) => `- ${d}`).join("\n")}\n`
+    : "";
+  return `Seller's product: ${env.sellerProduct()}.${rejected}
 
 Public engineering intelligence (JSON):
 ${JSON.stringify(compactStats(stats, velocity), null, 2)}
@@ -207,7 +217,7 @@ const responseSchema = {
 
 const oneParagraph = (s: string) => s.replace(/\s*\n+\s*/g, " ").replace(/\*\*/g, "").trim();
 
-export async function generateNarrative(stats: RawStats, velocity: VelocityScore): Promise<AiNarrative> {
+export async function generateNarrative(stats: RawStats, velocity: VelocityScore, disliked: string[] = []): Promise<AiNarrative> {
   const apiKey = env.geminiApiKey();
   if (!apiKey) return fallbackNarrative(stats, velocity);
 
@@ -215,13 +225,13 @@ export async function generateNarrative(stats: RawStats, velocity: VelocityScore
   const model = env.geminiModel();
   let lastError: unknown;
 
-  // One retry: schema-constrained output is reliable, but a second attempt
-  // covers transient 5xx/overload errors and the rare too-short paragraph.
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Up to 3 attempts with a short pause: covers transient overload (503/429) and the rare malformed reply.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
     try {
       const res = await ai.models.generateContent({
         model,
-        contents: buildPrompt(stats, velocity),
+        contents: buildPrompt(stats, velocity, disliked),
         config: {
           systemInstruction: SYSTEM,
           responseMimeType: "application/json",
@@ -249,9 +259,10 @@ export async function generateNarrative(stats: RawStats, velocity: VelocityScore
       };
     } catch (err) {
       lastError = err;
+      console.warn(`[gemini] attempt ${attempt + 1} failed:`, err instanceof Error ? err.message.slice(0, 300) : err);
     }
   }
-  console.error("[gemini] narrative generation failed, using fallback:", lastError);
+  console.error("[gemini] narrative generation failed after 3 attempts, using fallback:", lastError);
   return fallbackNarrative(stats, velocity);
 }
 
@@ -309,9 +320,7 @@ export async function regeneratePitch(
   }
   const ai = geminiClient(apiKey);
   const model = env.geminiModel();
-  const res = await ai.models.generateContent({
-    model,
-    contents: `Seller's product: ${env.sellerProduct()}.
+  const prompt = `Seller's product: ${env.sellerProduct()}.
 GitHub intelligence (JSON):
 ${JSON.stringify(compactStats(stats, velocity))}
 
@@ -323,20 +332,35 @@ Build it on a candidate angle NOT used by the previous versions below, naming th
 A [buying-signal] may raise a developer-productivity friction only as a question; a [context] angle must stay curiosity-led and must not imply any pain.
 Do not open with CI workflow or commit counts. Do not mention the product name. Do not start with "I", "With", "Managing", "Following", "Scaling", "Saw", "Given", "Because" or "Are".
 Previous versions to avoid:
-${avoid.map((a) => `- ${a}`).join("\n") || "- (none)"}`,
-    config: {
-      systemInstruction: SYSTEM,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: { pitch: { type: Type.STRING } },
-        required: ["pitch"],
-      },
-      temperature: 0.9,
-    },
-  });
-  const { pitch } = z.object({ pitch: z.string().min(20).max(320) }).parse(JSON.parse(res.text ?? "{}"));
-  return { pitch: oneParagraph(pitch), model };
+${avoid.map((a) => `- ${a}`).join("\n") || "- (none)"}`;
+
+  // Same resilience as the main brief: up to 3 attempts with a short pause.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    try {
+      const res = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          systemInstruction: SYSTEM,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: { pitch: { type: Type.STRING } },
+            required: ["pitch"],
+          },
+          temperature: 0.9,
+        },
+      });
+      const { pitch } = z.object({ pitch: text(20, 400) }).parse(JSON.parse(res.text ?? "{}"));
+      return { pitch: oneParagraph(pitch), model };
+    } catch (err) {
+      lastError = err;
+      console.warn(`[gemini] pitch attempt ${attempt + 1} failed:`, err instanceof Error ? err.message.slice(0, 300) : err);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Gemini could not write a new opener");
 }
 
 /**

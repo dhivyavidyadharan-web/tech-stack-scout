@@ -43,6 +43,7 @@ import type { Architecture, CompanyWithIntel, EngineeringIntelligence, HiringSig
 import { cn } from "@/lib/utils";
 import { ActivityList, activityFrom, highlightsFrom, NOW_WINDOW_DAYS } from "./activity-feed";
 import { EvidencePanel, SourceStatus } from "./evidence-panel";
+import { FeedbackBar } from "./feedback-bar";
 import { HistoryPanel } from "./history-panel";
 
 interface Props {
@@ -51,6 +52,8 @@ interface Props {
   onRefresh: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onIntelUpdate: (id: string, intel: EngineeringIntelligence) => void;
+  /** Re-fetch the watchlist (after feedback is saved). */
+  onReload: () => Promise<void>;
 }
 
 const VELOCITY_STYLE: Record<VelocityScore, { dot: string; text: string; bg: string }> = {
@@ -67,7 +70,7 @@ const TONES: { key: ToneKey; label: string }[] = [
   { key: "casual", label: "Casual" },
 ];
 
-export function CompanyCard({ company, refreshing, onRefresh, onRemove, onIntelUpdate }: Props) {
+export function CompanyCard({ company, refreshing, onRefresh, onRemove, onIntelUpdate, onReload }: Props) {
   const intel = company.intelligence;
   const hasData = Boolean(intel?.last_refreshed_at);
   const [removing, setRemoving] = useState(false);
@@ -149,7 +152,7 @@ export function CompanyCard({ company, refreshing, onRefresh, onRemove, onIntelU
         ) : !hasData ? (
           <NotEnriched error={intel?.refresh_error ?? null} onEnrich={() => onRefresh(company.id)} />
         ) : (
-          <IntelBody company={company} intel={intel!} refreshing={refreshing} onIntelUpdate={onIntelUpdate} />
+          <IntelBody company={company} intel={intel!} refreshing={refreshing} onIntelUpdate={onIntelUpdate} onReload={onReload} />
         )}
       </CardContent>
 
@@ -217,11 +220,13 @@ function IntelBody({
   intel,
   refreshing,
   onIntelUpdate,
+  onReload,
 }: {
   company: CompanyWithIntel;
   intel: EngineeringIntelligence;
   refreshing: boolean;
   onIntelUpdate: Props["onIntelUpdate"];
+  onReload: Props["onReload"];
 }) {
   const paragraphs = (intel.engineering_summary ?? "").split(/\n\s*\n/).filter(Boolean);
   // Short TL;DR up front; the full two-paragraph context lives behind a dropdown.
@@ -379,7 +384,7 @@ function IntelBody({
         </section>
       )}
 
-      <OutreachHook companyId={company.id} intel={intel} onIntelUpdate={onIntelUpdate} />
+      <OutreachHook company={company} intel={intel} onIntelUpdate={onIntelUpdate} onReload={onReload} />
 
       <Accordion multiple defaultValue={[]} className="-mx-1">
         <AccordionItem value="context">
@@ -499,14 +504,17 @@ function IntelBody({
 }
 
 function OutreachHook({
-  companyId,
+  company,
   intel,
   onIntelUpdate,
+  onReload,
 }: {
-  companyId: string;
+  company: CompanyWithIntel;
   intel: EngineeringIntelligence;
   onIntelUpdate: Props["onIntelUpdate"];
+  onReload: Props["onReload"];
 }) {
+  const companyId = company.id;
   const [tone, setTone] = useState<ToneKey>("primary");
   const [copied, setCopied] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -552,9 +560,12 @@ function OutreachHook({
       </div>
       <blockquote className="relative rounded-lg border-l-4 border-primary bg-primary/5 py-2.5 pr-20 pl-3 text-sm leading-relaxed">
         {regenerating ? (
-          <span className="flex flex-col gap-1.5">
+          <span className="flex flex-col gap-1.5" role="status">
             <Skeleton className="h-3.5 w-full" />
             <Skeleton className="h-3.5 w-3/4" />
+            <span className="flex items-center gap-1.5 text-[11px] not-italic text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" /> Gemini is writing a new opener from the evidence (usually 10–30 s)…
+            </span>
           </span>
         ) : (
           <span className="italic">{text ? `“${text}”` : "No variant yet — generate one."}</span>
@@ -614,6 +625,16 @@ function OutreachHook({
           </p>
         )
       )}
+      <FeedbackBar
+        companyId={companyId}
+        opener={text}
+        tone={tone}
+        feedback={company.feedback ?? []}
+        replyStatus={company.reply_status ?? null}
+        onBusy={setRegenerating}
+        onIntelUpdate={onIntelUpdate}
+        onReload={onReload}
+      />
     </section>
   );
 }

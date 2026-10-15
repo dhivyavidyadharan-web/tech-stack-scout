@@ -15,7 +15,7 @@ export async function GET() {
     const rows = await loadWatchlist();
     const header = [
       "Company", "Domain", "GitHub", "Overview", "Engineering Complexity", "Velocity", "Active Repos (30d)", "Commits (30d)",
-      "Last Commit", "Top Languages", "Infrastructure (confirmed)", "Microservices", "Open Eng Roles", "Tools in Job Posts", "Latest News", "Latest Release", "Latest Blog Post", "Outreach Hook", "Engineering Summary", "Last Refreshed",
+      "Last Commit", "Top Languages", "Infrastructure (confirmed)", "Microservices", "Open Eng Roles", "Tools in Job Posts", "Latest News", "Latest Release", "Latest Blog Post", "Reply Status", "Openers 👍", "Openers 👎", "Outreach Hook", "Engineering Summary", "Last Refreshed",
     ];
     const lines = rows.map((c) => {
       const i = c.intelligence;
@@ -37,6 +37,9 @@ export async function GET() {
         i?.news?.find((n) => n.kind === "news")?.title,
         i && "releases" in i.building ? i.building.releases[0] && `${i.building.releases[0].repo} ${i.building.releases[0].tag}` : "",
         i?.blog_posts?.[0]?.title,
+        c.reply_status ?? "",
+        (c.feedback ?? []).filter((f) => f.rating === 1).length,
+        (c.feedback ?? []).filter((f) => f.rating === -1).length,
         i?.outreach_pitch,
         i?.engineering_summary?.replace(/\n\n/g, " ¶ "),
         i?.last_refreshed_at,

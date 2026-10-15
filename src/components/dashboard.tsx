@@ -482,7 +482,13 @@ export function Dashboard({ initialCompanies }: { initialCompanies: CompanyWithI
                 </div>
               )}
             </Panel>
-            <Panel id="leaderboard" className="scroll-mt-24 lg:col-span-3" title="Leaderboard" subtitle="Ranked by engineering complexity — click a row to open the account">
+            <Panel
+              id="leaderboard"
+              className="scroll-mt-24 lg:col-span-3"
+              title="Leaderboard"
+              subtitle="Ranked by engineering complexity — click a row to open the account"
+              action={<FeedbackSummary companies={companies ?? []} />}
+            >
               {companies === null ? <Skeleton className="h-56 w-full rounded-xl" /> : <Leaderboard companies={companies} onJump={jumpTo} />}
             </Panel>
           </div>
@@ -540,6 +546,7 @@ export function Dashboard({ initialCompanies }: { initialCompanies: CompanyWithI
                     onRefresh={refreshOne}
                     onRemove={remove}
                     onIntelUpdate={updateIntel}
+                    onReload={load}
                   />
                 ))}
               </div>
@@ -586,6 +593,30 @@ function SyncIndicator({
       <span className="whitespace-nowrap tabular-nums">{label}</span>
       <RotateCw className={cn("size-3 opacity-60 group-hover:opacity-100", syncing && "animate-spin")} />
     </button>
+  );
+}
+
+/**
+ * Feedback-loop headline: how many openers Nikhil liked, and the real reply rate.
+ * Comparing replies against complexity/buying signals is how the score gets validated.
+ */
+function FeedbackSummary({ companies }: { companies: CompanyWithIntel[] }) {
+  const ratings = companies.flatMap((c) => c.feedback ?? []);
+  const liked = ratings.filter((r) => r.rating === 1).length;
+  const marked = companies.filter((c) => c.reply_status);
+  const replied = marked.filter((c) => c.reply_status === "replied").length;
+  return (
+    <div className="text-right text-[11px] leading-tight text-muted-foreground" aria-label="Feedback loop summary">
+      <div>
+        Openers liked: <span className="font-semibold text-foreground tabular-nums">{liked}</span> of{" "}
+        <span className="tabular-nums">{ratings.length}</span> rated
+      </div>
+      <div>
+        Replies: <span className="font-semibold text-foreground tabular-nums">{replied}</span> of{" "}
+        <span className="tabular-nums">{marked.length}</span> marked
+        {marked.length ? ` (${Math.round((replied / marked.length) * 100)}%)` : ""}
+      </div>
+    </div>
   );
 }
 

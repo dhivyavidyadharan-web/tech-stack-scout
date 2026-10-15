@@ -34,7 +34,15 @@ export async function enrichCompany(company: Company): Promise<EngineeringIntell
 
   const velocity = velocityFrom(stats);
   const fit = fitScore(stats);
-  const narrative = await generateNarrative(stats, velocity);
+  // Feedback loop: the last few openers Nikhil rejected steer the new one away from that style.
+  const { data: rejected } = await db()
+    .from("opener_feedback")
+    .select("opener")
+    .eq("company_id", company.id)
+    .eq("rating", -1)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  const narrative = await generateNarrative(stats, velocity, (rejected ?? []).map((r) => r.opener as string));
   const now = new Date().toISOString();
 
   const row = {

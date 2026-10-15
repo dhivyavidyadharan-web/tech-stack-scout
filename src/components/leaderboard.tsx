@@ -21,7 +21,7 @@ export function Leaderboard({ companies, onJump }: { companies: CompanyWithIntel
 
   return (
     <div className="-mx-1 overflow-x-auto">
-      <table className="w-full min-w-[720px] text-sm">
+      <table className="w-full min-w-[800px] text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
             <th className="px-3 py-2 font-semibold">#</th>
@@ -30,6 +30,7 @@ export function Leaderboard({ companies, onJump }: { companies: CompanyWithIntel
             <th className="px-3 py-2 font-semibold">Velocity</th>
             <th className="px-3 py-2 font-semibold">Eng. hiring</th>
             <th className="px-3 py-2 font-semibold" title="Evidence of developer-productivity need (see each account)">Buying signals</th>
+            <th className="px-3 py-2 font-semibold" title="Feedback loop: did the outreach get a reply? (set on each card)">Reply</th>
             <th className="px-3 py-2 font-semibold">Complexity</th>
           </tr>
         </thead>
@@ -95,6 +96,15 @@ export function Leaderboard({ companies, onJump }: { companies: CompanyWithIntel
                     <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">{intel.buying_signals.length}</span>
                   ) : (
                     <span className="text-muted-foreground">none</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5 text-xs">
+                  {c.reply_status === "replied" ? (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-semibold text-emerald-700 dark:text-emerald-300">Replied</span>
+                  ) : c.reply_status === "no_reply" ? (
+                    <span className="rounded-full bg-zinc-500/15 px-2 py-0.5 font-semibold text-zinc-600 dark:text-zinc-300">No reply</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
                 <td className="px-3 py-2.5">

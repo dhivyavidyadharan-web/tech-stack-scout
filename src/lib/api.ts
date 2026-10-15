@@ -1,7 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { GitHubError } from "./github";
-import type { ApiError, Company, CompanyWithIntel, EngineeringIntelligence, Snapshot } from "./types";
+import type { ApiError, Company, CompanyWithIntel, EngineeringIntelligence, OpenerFeedback, Snapshot } from "./types";
 import { db } from "./supabase";
 
 export function apiError(status: number, body: ApiError) {
@@ -29,7 +29,7 @@ const SNAPSHOTS_PER_COMPANY = 12;
 /** Load the watchlist joined with latest intelligence + recent snapshot history. */
 export async function loadWatchlist(): Promise<CompanyWithIntel[]> {
   const supabase = db();
-  const [companies, intel, snaps] = await Promise.all([
+  const [companies, intel, snaps, feedback] = await Promise.all([
     supabase.from("companies").select("*").order("created_at", { ascending: true }),
     supabase.from("engineering_intelligence").select("*"),
     supabase
@@ -37,10 +37,18 @@ export async function loadWatchlist(): Promise<CompanyWithIntel[]> {
       .select("*")
       .order("captured_at", { ascending: false })
       .limit(500),
+    supabase.from("opener_feedback").select("*").order("created_at", { ascending: false }).limit(300),
   ]);
   if (companies.error) throw new Error(companies.error.message);
   if (intel.error) throw new Error(intel.error.message);
   if (snaps.error) throw new Error(snaps.error.message);
+  if (feedback.error) throw new Error(feedback.error.message);
+  const feedbackByCompany = new Map<string, OpenerFeedback[]>();
+  for (const f of feedback.data as OpenerFeedback[]) {
+    const list = feedbackByCompany.get(f.company_id) ?? [];
+    if (list.length < 20) list.push(f);
+    feedbackByCompany.set(f.company_id, list);
+  }
 
   const byCompany = new Map((intel.data as EngineeringIntelligence[]).map((i) => [i.company_id, i]));
   const snapsByCompany = new Map<string, Snapshot[]>();
@@ -58,6 +66,7 @@ export async function loadWatchlist(): Promise<CompanyWithIntel[]> {
       // re-prompting; the browser only needs one number from it.
       intelligence: intel ? { ...intel, raw_stats: { reposAnalyzed: intel.raw_stats?.reposAnalyzed } } : null,
       snapshots: snapsByCompany.get(c.id) ?? [],
+      feedback: feedbackByCompany.get(c.id) ?? [],
     };
   });
 }
