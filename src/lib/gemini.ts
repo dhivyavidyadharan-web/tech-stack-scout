@@ -84,7 +84,9 @@ function compactStats(stats: RawStats, velocity: VelocityScore) {
       microservices: stats.architecture.microservices,
       evidence: stats.architecture.signals,
     },
-    hiring: stats.hiring
+    hiring: stats.hiring?.totalRoles === 0
+      ? "a public job board exists but lists no roles — hiring is UNKNOWN (they likely hire through another site); do not say they have zero openings"
+      : stats.hiring
       ? {
           open_engineering_roles: stats.hiring.engineeringRoles,
           total_open_roles: stats.hiring.totalRoles,

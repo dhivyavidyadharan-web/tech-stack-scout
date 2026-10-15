@@ -83,8 +83,13 @@ const HIGHLIGHT_PRIORITY: ActivityItem["kind"][] = ["news", "release", "hn", "re
  * Card summary: the newest item of each kind, most decision-relevant kinds first,
  * so a funding round isn't pushed out by three patch releases.
  */
+export const NOW_WINDOW_DAYS = 30;
+
 export function highlightsFrom(items: ActivityItem[], max = 3): ActivityItem[] {
-  return HIGHLIGHT_PRIORITY.map((k) => items.find((i) => i.kind === k))
+  // "Now" means now: only items from the last 30 days qualify for the card summary.
+  const cutoff = Date.now() - NOW_WINDOW_DAYS * 86_400_000;
+  const recent = items.filter((i) => i.date && new Date(i.date).getTime() >= cutoff);
+  return HIGHLIGHT_PRIORITY.map((k) => recent.find((i) => i.kind === k))
     .filter((i): i is ActivityItem => Boolean(i))
     .slice(0, max);
 }

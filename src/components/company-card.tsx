@@ -41,7 +41,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ago, apiFetch, buildBrief, copyText, isStale, langColor, shortAgo, toastApiError } from "@/lib/client";
 import type { Architecture, CompanyWithIntel, EngineeringIntelligence, HiringSignals, PitchTone, VelocityScore } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { ActivityList, activityFrom, highlightsFrom } from "./activity-feed";
+import { ActivityList, activityFrom, highlightsFrom, NOW_WINDOW_DAYS } from "./activity-feed";
 import { EvidencePanel, SourceStatus } from "./evidence-panel";
 import { HistoryPanel } from "./history-panel";
 
@@ -227,6 +227,7 @@ function IntelBody({
   // Short TL;DR up front; the full two-paragraph context lives behind a dropdown.
   const overview = intel.overview ?? paragraphs[0]?.match(/^.*?[.!?](\s|$)/)?.[0] ?? "";
   const activity = activityFrom(intel);
+  const highlights = highlightsFrom(activity);
   const matchingJobs = intel.hiring_signals?.matchingJobs ?? [];
   const confirmed = intel.cloud_infra_tools.filter((t) => t.confirmed);
   const mentioned = intel.cloud_infra_tools.filter((t) => !t.confirmed);
@@ -244,8 +245,14 @@ function IntelBody({
 
       {activity.length > 0 && (
         <section className="space-y-2">
-          <SectionLabel>Building now</SectionLabel>
-          <ActivityList items={highlightsFrom(activity)} />
+          <SectionLabel>Building now · last {NOW_WINDOW_DAYS} days</SectionLabel>
+          {highlights.length ? (
+            <ActivityList items={highlights} />
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No news, releases or posts in the last {NOW_WINDOW_DAYS} days. Older items are under “All recent activity”.
+            </p>
+          )}
         </section>
       )}
 
@@ -669,7 +676,8 @@ function HiringSection({ hiring }: { hiring: HiringSignals | null }) {
           >
             <Briefcase className="size-3.5 text-muted-foreground" />
             {hiring.totalRoles === 0 ? (
-              <>Job board found, no open roles right now</>
+              // An empty board usually means it's unused (they hire elsewhere), not that they aren't hiring.
+              <>{hiring.provider} board exists but lists no roles (they may hire through another site)</>
             ) : (
               <>
                 <span className="font-semibold tabular-nums">{hiring.engineeringRoles}</span> open engineering roles
@@ -708,7 +716,7 @@ function VelocityTag({ velocity, lastActivity }: { velocity: VelocityScore; last
         <span className={cn("relative inline-flex size-2 rounded-full", s.dot)} />
       </span>
       <span suppressHydrationWarning>
-        {velocity} velocity · {label}: pushed {shortAgo(lastActivity)}
+        {velocity} velocity · {label}: last public push {shortAgo(lastActivity)}
       </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-64">

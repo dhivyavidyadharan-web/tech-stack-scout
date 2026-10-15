@@ -83,7 +83,12 @@ export function Leaderboard({ companies, onJump }: { companies: CompanyWithIntel
                   )}
                 </td>
                 <td className="px-3 py-2.5 text-xs tabular-nums">
-                  {intel.hiring_signals ? `${intel.hiring_signals.engineeringRoles} roles` : <span className="text-muted-foreground">—</span>}
+                  {intel.hiring_signals && intel.hiring_signals.totalRoles > 0 ? (
+                    `${intel.hiring_signals.engineeringRoles} roles`
+                  ) : (
+                    // Empty or missing public board: unknown, not "zero hiring".
+                    <span className="text-muted-foreground" title="No active public job board found">n/a</span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-xs tabular-nums">
                   {intel.buying_signals?.length ? (

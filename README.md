@@ -59,7 +59,7 @@ The seed accounts start without intelligence. Click **"Enrich them now"** on the
 | `CRON_SECRET` | ✅ for cron | `openssl rand -hex 32` | Vercel Cron sends it as `Authorization: Bearer …` |
 | `GEMINI_BASE_URL` | optional | from your key provider | Custom gateway/proxy URL for Gemini (e.g. institution-issued keys) |
 | `GEMINI_USE_VERTEX` | optional | `true` / `false` | Use Vertex AI (express-mode key) instead of the Gemini Developer API |
-| `GEMINI_MODEL` | optional | default `gemini-flash-latest` | Pin a specific Flash model, e.g. `gemini-2.5-flash` |
+| `GEMINI_MODEL` | optional | default `gemini-flash-latest` | Google's rolling alias for the newest Flash model. At submission (Oct 2026) it resolves to **`gemini-3.8-flash`**. Set e.g. `GEMINI_MODEL=gemini-3.8-flash` to pin it. |
 | `DASHBOARD_PASSWORD` | optional | any string | Enables HTTP Basic Auth on the whole app (any username) |
 | `SELLER_PRODUCT_DESCRIPTION` | optional | free text | Describes what you sell; every opener is tailored to it |
 

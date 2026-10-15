@@ -39,7 +39,11 @@ export function fitScore(stats: RawStats): { score: number; reasons: FitReason[]
       max: 10,
     },
     {
-      label: hiring ? `Hiring: ${hiring.engineeringRoles} open engineering roles` : "Hiring: no public job board found",
+      label: !hiring
+        ? "Hiring: no public job board found"
+        : hiring.totalRoles === 0
+          ? `Hiring: ${hiring.provider} board is empty (hiring unknown — they may use another site)`
+          : `Hiring: ${hiring.engineeringRoles} open engineering roles`,
       points: hiring ? clamp(hiring.engineeringRoles, 10) : 0,
       max: 10,
     },
